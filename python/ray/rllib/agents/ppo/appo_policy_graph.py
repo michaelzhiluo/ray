@@ -85,10 +85,13 @@ class VTraceSurrogateLoss(object):
                  actions,
                  prev_actions_logp,
                  actions_logp,
+                 old_policy_actions_logp,
                  action_kl,
                  actions_entropy,
+                 cur_kl_coeff,
                  dones,
                  behaviour_logits,
+                 old_policy_behaviour_logits,
                  target_logits,
                  discount,
                  rewards,
@@ -100,7 +103,8 @@ class VTraceSurrogateLoss(object):
                  entropy_coeff=-0.01,
                  clip_rho_threshold=1.0,
                  clip_pg_rho_threshold=1.0,
-                 clip_param=0.3):
+                 clip_param=0.3,
+                 use_kl_loss=True):
         """PPO surrogate loss with vtrace importance weighting.
 
         VTraceLoss takes tensors of shape [T, B, ...], where `B` is the
@@ -137,7 +141,7 @@ class VTraceSurrogateLoss(object):
         with tf.device("/cpu:0"):
             self.vtrace_returns = vtrace.multi_from_logits(
                 behaviour_policy_logits=behaviour_logits,
-                target_policy_logits=target_logits,
+                target_policy_logits=old_policy_behaviour_logits,
                 actions=tf.unstack(tf.cast(actions, tf.float32), axis=2) if is_continuous else 
                         tf.unstack(tf.cast(actions, tf.int32), axis=2),
                 discounts=tf.to_float(~dones) * discount,
@@ -149,15 +153,22 @@ class VTraceSurrogateLoss(object):
                                               tf.float32),
                 dist_class=dist_class)
 
-        logp_ratio = tf.exp(actions_logp - prev_actions_logp)
+        self.importance_ratio = tf.clip_by_value(tf.exp(prev_actions_logp-old_policy_actions_logp), 0.0, 2.0)
+
+        logp_ratio = self.importance_ratio*tf.exp(actions_logp - prev_actions_logp)
 
         advantages = self.vtrace_returns.pg_advantages
+
+        #a_mean, a_var = tf.nn.moments(advantages, axes=[0,1])
+        #advantages = (advantages - a_mean)/tf.math.maximum(tf.constant(1e-4), a_var**0.5)
         surrogate_loss = tf.minimum(
             advantages * logp_ratio,
             advantages * tf.clip_by_value(logp_ratio, 1 - clip_param,
                                           1 + clip_param))
 
         self.mean_kl = tf.reduce_mean(action_kl)
+        self.kl_loss = tf.reduce_sum(action_kl)
+
         self.pi_loss = -tf.reduce_sum(surrogate_loss)
         self.mean_pi_loss = -reduce_mean_valid(surrogate_loss)
 
@@ -175,6 +186,10 @@ class VTraceSurrogateLoss(object):
         # The summed weighted loss
         self.total_loss = (self.pi_loss + self.vf_loss * vf_loss_coeff +
                            self.entropy * entropy_coeff)
+
+        if use_kl_loss:
+            self.total_loss+=cur_kl_coeff*self.kl_loss
+
 
 
 class APPOPostprocessing(object):
@@ -228,6 +243,16 @@ class AsyncPPOPolicyGraph(LearningRateSchedule, APPOPostprocessing,
         self.sess = tf.get_default_session()
         self.grads = None
 
+        self.use_kl_loss = self.config["use_kl_loss"]
+        self.kl_coeff_val = self.config["kl_coeff"]
+        self.kl_target = self.config["kl_target"]
+        self.kl_coeff = tf.get_variable(
+            initializer=tf.constant_initializer(self.kl_coeff_val),
+            name="kl_coeff",
+            shape=(),
+            trainable=False,
+            dtype=tf.float32)
+
         is_multidiscrete = False
         if isinstance(action_space, gym.spaces.Discrete):
             output_hidden_shape = [action_space.n]
@@ -262,6 +287,7 @@ class AsyncPPOPolicyGraph(LearningRateSchedule, APPOPostprocessing,
                 tf.float32, [None, logit_dim], name="behaviour_logits")
             observations = tf.placeholder(
                 tf.float32, [None] + list(observation_space.shape))
+
             existing_state_in = None
             existing_seq_lens = None
 
@@ -270,11 +296,16 @@ class AsyncPPOPolicyGraph(LearningRateSchedule, APPOPostprocessing,
                     tf.float32, name="advantages", shape=(None, ))
                 value_targets = tf.placeholder(
                     tf.float32, name="value_targets", shape=(None, ))
+            else:
+                old_policy_behaviour_logits = tf.placeholder(
+                    tf.float32, [None, logit_dim], name="old_policy_behaviour_logits")
         self.observations = observations
 
         # Unpack behaviour logits
         unpacked_behaviour_logits = tf.split(
             behaviour_logits, output_hidden_shape, axis=1)
+        unpacked_old_policy_behaviour_logits = tf.split(
+            old_policy_behaviour_logits, output_hidden_shape, axis=1)
         # Setup the policy
         dist_class, logit_dim = ModelCatalog.get_action_dist(
             action_space, self.config["model"])
@@ -303,6 +334,7 @@ class AsyncPPOPolicyGraph(LearningRateSchedule, APPOPostprocessing,
 
         action_dist = dist_class(dist_inputs)
         prev_action_dist = dist_class(prev_dist_inputs)
+        old_policy_action_dist = dist_class(old_policy_behaviour_logits)
 
         values = self.model.value_function()
         self.value_function = values
@@ -363,12 +395,16 @@ class AsyncPPOPolicyGraph(LearningRateSchedule, APPOPostprocessing,
                     prev_action_dist.logp(actions), drop_last=True),
                 actions_logp=make_time_major(
                     action_dist.logp(actions), drop_last=True),
-                action_kl=prev_action_dist.kl(action_dist),
+                old_policy_actions_logp=make_time_major(old_policy_action_dist.logp(actions), drop_last=True),
+                action_kl=old_policy_action_dist.kl(action_dist),
                 actions_entropy=make_time_major(
                     action_dist.entropy(), drop_last=True),
+                cur_kl_coeff=self.kl_coeff,
                 dones=make_time_major(dones, drop_last=True),
                 behaviour_logits=make_time_major(
                     unpacked_behaviour_logits, drop_last=True),
+                old_policy_behaviour_logits=make_time_major(
+                    unpacked_old_policy_behaviour_logits, drop_last=True),
                 target_logits=make_time_major(
                     unpacked_outputs, drop_last=True),
                 discount=config["gamma"],
@@ -404,6 +440,7 @@ class AsyncPPOPolicyGraph(LearningRateSchedule, APPOPostprocessing,
         behaviour_dist = MultiCategorical(unpacked_behaviour_logits)
 
         kls = model_dist.kl(behaviour_dist)
+        self.drop_batch = tf.cond(tf.reduce_max(kls)>1.0, lambda: tf.constant(True), lambda: tf.constant(False))
         if len(kls) > 1:
             self.KL_stats = {}
 
@@ -431,9 +468,13 @@ class AsyncPPOPolicyGraph(LearningRateSchedule, APPOPostprocessing,
             ("prev_actions", prev_actions),
             ("prev_rewards", prev_rewards),
         ]
+
         if not self.config["vtrace"]:
             loss_in.append(("advantages", adv_ph))
             loss_in.append(("value_targets", value_targets))
+        else:
+            loss_in.append(("old_policy_behaviour_logits", old_policy_behaviour_logits))
+            
         LearningRateSchedule.__init__(self, self.config["lr"],
                                       self.config["lr_schedule"])
         TFPolicyGraph.__init__(
@@ -474,8 +515,17 @@ class AsyncPPOPolicyGraph(LearningRateSchedule, APPOPostprocessing,
                 "vf_explained_var": explained_variance(
                     tf.reshape(self.loss.value_targets, [-1]),
                     tf.reshape(values_batched, [-1])),
+                "drop_batch": self.drop_batch,
             }, **self.KL_stats),
         }
+
+        is_stat_mean, is_stat_var = tf.nn.moments(self.loss.importance_ratio, [0,1])
+        self.stats_fetches[LEARNER_STATS_KEY].update({"mean_IS": is_stat_mean})
+        self.stats_fetches[LEARNER_STATS_KEY].update({"var_IS": is_stat_var})
+
+        if self.use_kl_loss:
+            self.stats_fetches[LEARNER_STATS_KEY].update({"KL": self.loss.mean_kl})
+            self.stats_fetches[LEARNER_STATS_KEY].update({"KL_coeff": self.kl_coeff})
 
     def optimizer(self):
         if self.config["opt_type"] == "adam":
@@ -488,11 +538,22 @@ class AsyncPPOPolicyGraph(LearningRateSchedule, APPOPostprocessing,
     def gradients(self, optimizer, loss):
         grads = tf.gradients(loss, self.var_list)
         self.grads, _ = tf.clip_by_global_norm(grads, self.config["grad_clip"])
+        #self.grads = tf.cond(self.drop_batch, lambda: [tf.clip_by_value(grad, -0.0, 0.0) for grad in self.grads], lambda: self.grads)
+        #self.grads[3] = tf.Print(self.grads[3], ["grads", self.grads[3]])
         clipped_grads = list(zip(self.grads, self.var_list))
         return clipped_grads
 
     def extra_compute_grad_fetches(self):
         return self.stats_fetches
+
+    def update_kl(self, sampled_kl):
+        if sampled_kl > 2.0 * self.kl_target:
+            self.kl_coeff_val *= 1.5
+        elif sampled_kl < 0.5 * self.kl_target:
+            self.kl_coeff_val *= 0.5
+        self.kl_coeff.load(self.kl_coeff_val, session=self.sess)
+        return self.kl_coeff_val
+
 
     def value(self, ob, *args):
         feed_dict = {self.observations: [ob], self.model.seq_lens: [1]}

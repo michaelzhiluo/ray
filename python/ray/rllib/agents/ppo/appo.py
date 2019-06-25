@@ -22,6 +22,9 @@ OPTIMIZER_SHARED_CONFIGS = [
     "broadcast_interval",
     "num_sgd_iter",
     "minibatch_buffer_size",
+    "old_policy_lag",
+    "use_kl_loss",
+    "use_appo",
 ]
 
 
@@ -37,10 +40,22 @@ DEFAULT_CONFIG = with_base_config(impala.DEFAULT_CONFIG, {
     # with a value function, see https://arxiv.org/pdf/1506.02438.pdf.
     "use_gae": True,
     # GAE(lambda) parameter
-    "lambda": 1.0,
+    "lambda": 0.995,
 
     # == PPO surrogate loss options ==
-    "clip_param": 0.4,
+    "clip_param": 0.4,              
+
+    # Old Policy Parameters
+    "old_policy_lag": 100,
+
+    # KL Loss Parameters
+    "use_kl_loss": True,
+    "kl_coeff": 1.0,
+    "kl_target": 0.01,
+
+
+    #For AsyncOptimzer to know which agent it is using
+    "use_appo": True,
 
     # == IMPALA optimizer params (see documentation in impala.py) ==
     "sample_batch_size": 50,
@@ -86,6 +101,9 @@ class APPOTrainer(impala.ImpalaTrainer):
         self.local_evaluator = self.make_local_evaluator(
             self.env_creator, policy_cls)
 
+        self.old_policy_evaluator = self.make_local_evaluator(
+            self.env_creator, policy_cls)
+
         if self.config["num_aggregation_workers"] > 0:
             # Create co-located aggregator actors first for placement pref
             aggregators = TreeAggregator.precreate_aggregators(
@@ -95,6 +113,7 @@ class APPOTrainer(impala.ImpalaTrainer):
             env_creator, policy_cls, config["num_workers"])
         self.optimizer = AsyncSamplesOptimizer(self.local_evaluator,
                                                self.remote_evaluators,
+                                               self.old_policy_evaluator,
                                                **config["optimizer"])
 
         if self.config["num_aggregation_workers"] > 0:

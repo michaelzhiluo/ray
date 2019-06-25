@@ -95,19 +95,25 @@ class AggregationWorkerBase(object):
                 cycle. Setting this avoids iter_train_batches returning too
                 much data at once.
         """
-
         for ev, sample_batch in self._augment_with_replay(
                 self.sample_tasks.completed_prefetch(
                     blocking_wait=True, max_yield=max_yield)):
             sample_batch.decompress_if_needed()
             self.batch_buffer.append(sample_batch)
+
+            ev.set_weights.remote(self.broadcasted_weights)
+            self.num_weight_syncs += 1
+            self.num_sent_since_broadcast += 1
+
+            # Kick off another sample request
+            self.sample_tasks.add(ev, ev.sample.remote())
+
             if sum(b.count
                    for b in self.batch_buffer) >= self.train_batch_size:
                 train_batch = self.batch_buffer[0].concat_samples(
                     self.batch_buffer)
                 yield train_batch
                 self.batch_buffer = []
-
             # If the batch was replayed, skip the update below.
             if ev is None:
                 continue
@@ -117,13 +123,15 @@ class AggregationWorkerBase(object):
                 self.replay_batches.append(sample_batch)
                 if len(self.replay_batches) > self.replay_buffer_num_slots:
                     self.replay_batches.pop(0)
-
+            
+            '''
             ev.set_weights.remote(self.broadcasted_weights)
             self.num_weight_syncs += 1
             self.num_sent_since_broadcast += 1
 
             # Kick off another sample request
             self.sample_tasks.add(ev, ev.sample.remote())
+            '''
 
     @override(Aggregator)
     def stats(self):

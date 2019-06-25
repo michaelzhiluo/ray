@@ -428,7 +428,8 @@ class PolicyEvaluator(EvaluatorInterface):
         Return:
             SampleBatch|MultiAgentBatch from evaluating the current policies.
         """
-
+        #import time; start = time.time()
+        #print("Worker Start Sampling ", self.worker_index)
         if self._fake_sampler and self.last_batch is not None:
             return self.last_batch
 
@@ -480,6 +481,7 @@ class PolicyEvaluator(EvaluatorInterface):
 
         if self._fake_sampler:
             self.last_batch = batch
+        #print("Worker End Sampling, ", self.worker_index, time.time()-start)
         return batch
 
     @DeveloperAPI
@@ -500,8 +502,12 @@ class PolicyEvaluator(EvaluatorInterface):
 
     @override(EvaluatorInterface)
     def set_weights(self, weights):
+        #print("Setting Weights", self.worker_index)
+        #import time
+        #start = time.time()
         for pid, w in weights.items():
             self.policy_map[pid].set_weights(w)
+        #print("Worker finished setting weights, ", self.worker_index, time.time()-start)
 
     @override(EvaluatorInterface)
     def compute_gradients(self, samples):

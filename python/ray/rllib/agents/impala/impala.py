@@ -12,6 +12,9 @@ from ray.rllib.optimizers.aso_tree_aggregator import TreeAggregator
 from ray.rllib.utils.annotations import override
 from ray.tune.trainable import Trainable
 from ray.tune.trial import Resources
+from ray.rllib.models.action_dist import (Categorical, MultiCategorical,
+                                          Deterministic, DiagGaussian,
+                                          MultiActionDistribution, Dirichlet)
 
 OPTIMIZER_SHARED_CONFIGS = [
     "lr",
@@ -125,6 +128,7 @@ class ImpalaTrainer(Trainer):
             env_creator, policy_cls, config["num_workers"])
         self.optimizer = AsyncSamplesOptimizer(self.local_evaluator,
                                                self.remote_evaluators,
+                                               None,
                                                **config["optimizer"])
         if config["entropy_coeff"] < 0:
             raise DeprecationWarning("entropy_coeff must be >= 0")

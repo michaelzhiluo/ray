@@ -1,0 +1,23 @@
+pong-impala-custom:
+    env: PongNoFrameskip-v4
+    run: IMPALA
+    local_dir: /data/mluo/pong-impala-ray
+    stop:
+        episode_reward_mean: 18
+        timesteps_total: 10000000
+        time_total_s: 480  
+    config:
+        vtrace: True
+        sample_batch_size: 50
+        train_batch_size: 750
+        num_workers: 32
+        broadcast_interval: 1
+        max_sample_requests_in_flight_per_worker: 1
+        num_data_loader_buffers: 1
+        num_envs_per_worker: 
+            grid_search: [8,8,8,8,8]
+        num_gpus: 1
+        grad_clip: 20
+        model:
+          dim: 42
+

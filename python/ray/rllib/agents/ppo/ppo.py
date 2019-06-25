@@ -109,6 +109,7 @@ class PPOTrainer(Trainer):
         prev_steps = self.optimizer.num_steps_sampled
         fetches = self.optimizer.step()
         if "kl" in fetches:
+            print("KL UPDATE")
             # single-agent
             self.local_evaluator.for_policy(
                 lambda pi: pi.update_kl(fetches["kl"]))

@@ -35,7 +35,8 @@ class MinibatchBuffer(object):
            released: True if the item is now removed from the ring buffer.
         """
         if self.ttl[self.idx] <= 0:
-            self.buffers[self.idx] = self.inqueue.get(timeout=300.0)
+            self.buffers[self.idx] = self.inqueue.get()#self.inqueue.get(timeout=300.0) #self.inqueue.pop()
+            #print("Eating Batches: ", self.inqueue.qsize())
             self.ttl[self.idx] = self.cur_max_ttl
             if self.cur_max_ttl < self.max_ttl:
                 self.cur_max_ttl += 1
@@ -46,3 +47,9 @@ class MinibatchBuffer(object):
             self.buffers[self.idx] = None
         self.idx = (self.idx + 1) % len(self.buffers)
         return buf, released
+
+    def replace(self):
+        temp = (self.idx-1)%len(self.buffers)
+        self.ttl[temp] = self.cur_max_ttl
+        self.buffers[temp] = self.inqueue.pop()
+        return

@@ -30,6 +30,7 @@ class AsyncSamplesOptimizer(PolicyOptimizer):
     def __init__(self,
                  local_evaluator,
                  remote_evaluators,
+                 old_policy_evaluator,
                  train_batch_size=500,
                  sample_batch_size=50,
                  num_envs_per_worker=1,
@@ -44,12 +45,16 @@ class AsyncSamplesOptimizer(PolicyOptimizer):
                  minibatch_buffer_size=1,
                  learner_queue_size=16,
                  num_aggregation_workers=0,
+                 old_policy_lag=0,
+                 use_appo=False,
+                 use_kl_loss=False,
                  _fake_gpus=False):
         PolicyOptimizer.__init__(self, local_evaluator, remote_evaluators)
 
         self._stats_start_time = time.time()
         self._last_stats_time = {}
         self._last_stats_sum = {}
+        self.old_policy_evaluator = old_policy_evaluator
 
         if num_gpus > 1 or num_data_loader_buffers > 1:
             logger.info(
@@ -74,7 +79,12 @@ class AsyncSamplesOptimizer(PolicyOptimizer):
         else:
             self.learner = LearnerThread(self.local_evaluator,
                                          minibatch_buffer_size, num_sgd_iter,
-                                         learner_queue_size)
+                                         learner_queue_size, old_policy_evaluator=self.old_policy_evaluator,
+                                         old_policy_lag=old_policy_lag, use_appo=use_appo, use_kl_loss=use_kl_loss)
+
+        if self.old_policy_evaluator:
+            weights = self.local_evaluator.get_weights()
+            self.old_policy_evaluator.set_weights(weights)
         self.learner.start()
 
         # Stats
@@ -172,10 +182,12 @@ class AsyncSamplesOptimizer(PolicyOptimizer):
 
     def _step(self):
         sample_timesteps, train_timesteps = 0, 0
-
+        #print("Going into Step Method")
         for train_batch in self.aggregator.iter_train_batches():
             sample_timesteps += train_batch.count
-            self.learner.inqueue.put(train_batch)
+            #print("Putting into inqueue", sample_timesteps)
+            #print(self.learner.inqueue.qsize())
+            self.learner.inqueue.put(train_batch) #extend([train_batch])
             if (self.learner.weights_updated
                     and self.aggregator.should_broadcast()):
                 self.aggregator.broadcast_new_weights()

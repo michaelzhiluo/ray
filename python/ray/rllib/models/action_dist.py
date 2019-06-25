@@ -111,6 +111,9 @@ class Categorical(ActionDistribution):
 
     @override(ActionDistribution)
     def _build_sample_op(self):
+        self.last_dim = self.inputs.shape.ndims - 1
+        if(self.last_dim>=2):
+            return
         return tf.squeeze(tf.multinomial(self.inputs, 1), axis=1)
 
 

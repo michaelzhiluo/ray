@@ -21,6 +21,9 @@ from ray.rllib.models.catalog import ModelCatalog
 from ray.rllib.utils.annotations import override
 from ray.rllib.utils.error import UnsupportedSpaceException
 from ray.rllib.utils.explained_variance import explained_variance
+from ray.rllib.models.action_dist import (Categorical, MultiCategorical,
+                                          Deterministic, DiagGaussian,
+                                          MultiActionDistribution, Dirichlet)
 
 # Frozen logits of the policy that computed the action
 BEHAVIOUR_LOGITS = "behaviour_logits"
@@ -39,6 +42,7 @@ class VTraceLoss(object):
                  values,
                  bootstrap_value,
                  valid_mask,
+                 dist_class,
                  vf_loss_coeff=0.5,
                  entropy_coeff=0.01,
                  clip_rho_threshold=1.0,
@@ -72,18 +76,24 @@ class VTraceLoss(object):
         """
 
         # Compute vtrace on the CPU for better perf.
+        if dist_class is DiagGaussian or dist_class is Dirichlet:
+            is_continuous=True
+        else:
+            is_continuous=False
         with tf.device("/cpu:0"):
             self.vtrace_returns = vtrace.multi_from_logits(
                 behaviour_policy_logits=behaviour_logits,
                 target_policy_logits=target_logits,
-                actions=tf.unstack(tf.cast(actions, tf.int32), axis=2),
+                actions=tf.unstack(tf.cast(actions, tf.float32), axis=2) if is_continuous else 
+                        tf.unstack(tf.cast(actions, tf.int32), axis=2),
                 discounts=tf.to_float(~dones) * discount,
                 rewards=rewards,
                 values=values,
                 bootstrap_value=bootstrap_value,
                 clip_rho_threshold=tf.cast(clip_rho_threshold, tf.float32),
                 clip_pg_rho_threshold=tf.cast(clip_pg_rho_threshold,
-                                              tf.float32))
+                                              tf.float32),
+                dist_class=dist_class)
 
         # The policy gradients loss
         self.pi_loss = -tf.reduce_sum(
@@ -260,6 +270,7 @@ class VTracePolicyGraph(LearningRateSchedule, VTracePostprocessing,
             values=make_time_major(values, drop_last=True),
             bootstrap_value=make_time_major(values)[-1],
             valid_mask=make_time_major(mask, drop_last=True),
+            dist_class=dist_class,
             vf_loss_coeff=self.config["vf_loss_coeff"],
             entropy_coeff=self.config["entropy_coeff"],
             clip_rho_threshold=self.config["vtrace_clip_rho_threshold"],

@@ -346,11 +346,13 @@ class PPOPolicyGraph(LearningRateSchedule, PPOPostprocessing, TFPolicyGraph):
         return {LEARNER_STATS_KEY: self.stats_fetches}
 
     def update_kl(self, sampled_kl):
+        print(self.kl_coeff_val)
         if sampled_kl > 2.0 * self.kl_target:
             self.kl_coeff_val *= 1.5
         elif sampled_kl < 0.5 * self.kl_target:
             self.kl_coeff_val *= 0.5
         self.kl_coeff.load(self.kl_coeff_val, session=self.sess)
+        print(sampled_kl, self.kl_target, self.kl_coeff_val)
         return self.kl_coeff_val
 
     def _value(self, ob, prev_action, prev_reward, *args):
