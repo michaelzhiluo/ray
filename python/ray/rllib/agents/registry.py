@@ -88,6 +88,10 @@ def _import_marwil():
     from ray.rllib.agents import marwil
     return marwil.MARWILTrainer
 
+def _import_maml():
+    from ray.rllib.agents import maml
+    return maml.MAMLTrainer
+
 
 ALGORITHMS = {
     "DDPG": _import_ddpg,
@@ -106,6 +110,7 @@ ALGORITHMS = {
     "APEX_QMIX": _import_apex_qmix,
     "APPO": _import_appo,
     "MARWIL": _import_marwil,
+    "MAML": _import_maml,
 }
 
 
