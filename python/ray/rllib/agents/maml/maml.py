@@ -5,8 +5,7 @@ from __future__ import print_function
 from ray.rllib.agents.maml.maml_policy import MAMLTFPolicy
 from ray.rllib.agents.trainer import Trainer, with_common_config
 from ray.rllib.agents.trainer_template import build_trainer
-from ray.rllib.optimizers import AsyncSamplesOptimizer
-from ray.rllib.optimizers.aso_tree_aggregator import TreeAggregator
+from ray.rllib.optimizers import MAMLOptimizer
 from ray.rllib.utils.annotations import override
 from ray.tune.trainable import Trainable
 from ray.tune.trial import Resources
@@ -14,141 +13,134 @@ from ray.tune.trial import Resources
 # yapf: disable
 # __sphinx_doc_begin__
 DEFAULT_CONFIG = with_common_config({
-    # V-trace params (see vtrace.py).
-    "vtrace": True,
-    "vtrace_clip_rho_threshold": 1.0,
-    "vtrace_clip_pg_rho_threshold": 1.0,
-
-    # System params.
-    #
-    # == Overview of data flow in IMPALA ==
-    # 1. Policy evaluation in parallel across `num_workers` actors produces
-    #    batches of size `sample_batch_size * num_envs_per_worker`.
-    # 2. If enabled, the replay buffer stores and produces batches of size
-    #    `sample_batch_size * num_envs_per_worker`.
-    # 3. If enabled, the minibatch ring buffer stores and replays batches of
-    #    size `train_batch_size` up to `num_sgd_iter` times per batch.
-    # 4. The learner thread executes data parallel SGD across `num_gpus` GPUs
-    #    on batches of size `train_batch_size`.
-    #
-    "sample_batch_size": 50,
-    "train_batch_size": 500,
-    "min_iter_time_s": 10,
-    "num_workers": 2,
-    # number of GPUs the learner should use.
-    "num_gpus": 1,
-    # set >1 to load data into GPUs in parallel. Increases GPU memory usage
-    # proportionally with the number of buffers.
-    "num_data_loader_buffers": 1,
-    # how many train batches should be retained for minibatching. This conf
-    # only has an effect if `num_sgd_iter > 1`.
-    "minibatch_buffer_size": 1,
-    # number of passes to make over each train batch
-    "num_sgd_iter": 1,
-    # set >0 to enable experience replay. Saved samples will be replayed with
-    # a p:1 proportion to new data samples.
-    "replay_proportion": 0.0,
-    # number of sample batches to store for replay. The number of transitions
-    # saved total will be (replay_buffer_num_slots * sample_batch_size).
-    "replay_buffer_num_slots": 0,
-    # max queue size for train batches feeding into the learner
-    "learner_queue_size": 16,
-    # level of queuing for sampling.
-    "max_sample_requests_in_flight_per_worker": 2,
-    # max number of workers to broadcast one set of weights to
-    "broadcast_interval": 1,
-    # use intermediate actors for multi-level aggregation. This can make sense
-    # if ingesting >2GB/s of samples, or if the data requires decompression.
-    "num_aggregation_workers": 0,
-
-    # Learning params.
-    "grad_clip": 40.0,
-    # either "adam" or "rmsprop"
-    "opt_type": "adam",
-    "lr": 0.0005,
+    # If true, use the Generalized Advantage Estimator (GAE)
+    # with a value function, see https://arxiv.org/pdf/1506.02438.pdf.
+    "use_gae": True,
+    # GAE(lambda) parameter
+    "lambda": 1.0,
+    # Initial coefficient for KL divergence
+    "kl_coeff": 0.2,
+    # Size of batches collected from each worker
+    "sample_batch_size": 200,
+    # Number of timesteps collected for each SGD round
+    "train_batch_size": 4000,
+    # Total SGD batch size across all devices for SGD
+    "sgd_minibatch_size": 128,
+    # Number of SGD iterations in each outer loop
+    "num_sgd_iter": 30,
+    # Stepsize of SGD
+    "lr": 5e-5,
+    # Learning rate schedule
     "lr_schedule": None,
-    # rmsprop considered
-    "decay": 0.99,
-    "momentum": 0.0,
-    "epsilon": 0.1,
-    # balancing the three losses
-    "vf_loss_coeff": 0.5,
-    "entropy_coeff": 0.01,
-
-    # use fake (infinite speed) sampler for testing
-    "_fake_sampler": False,
+    # Share layers for value function
+    "vf_share_layers": False,
+    # Coefficient of the value function loss
+    "vf_loss_coeff": 1.0,
+    # Coefficient of the entropy regularizer
+    "entropy_coeff": 0.0,
+    # PPO clip parameter
+    "clip_param": 0.3,
+    # Clip param for the value function. Note that this is sensitive to the
+    # scale of the rewards. If your expected V is large, increase this.
+    "vf_clip_param": 10.0,
+    # If specified, clip the global norm of gradients by this amount
+    "grad_clip": None,
+    # Target value for KL divergence
+    "kl_target": 0.01,
+    # Whether to rollout "complete_episodes" or "truncate_episodes"
+    "batch_mode": "truncate_episodes",
+    # Which observation filter to apply to the observation
+    "observation_filter": "NoFilter",
+    # Uses the sync samples optimizer instead of the multi-gpu one. This does
+    # not support minibatches.
+    "simple_optimizer": False,
+    # (Deprecated) Use the sampling behavior as of 0.6, which launches extra
+    # sampling tasks for performance but can waste a large portion of samples.
+    "straggler_mitigation": False,
 })
 # __sphinx_doc_end__
 # yapf: enable
 
+def choose_policy_optimizer(workers, config):
+    return MAMLOptimizer(
+        workers,
+        num_sgd_iter=config["num_sgd_iter"],
+        train_batch_size=config["train_batch_size"])
 
-def choose_policy(config):
-    return MAMLTFPolicy
+def update_kl(trainer, fetches):
+    if "kl" in fetches:
+        # single-agent
+        trainer.workers.local_worker().for_policy(
+            lambda pi: pi.update_kl(fetches["kl"]))
+    else:
+        def update(pi, pi_id):
+            if pi_id in fetches:
+                pi.update_kl(fetches[pi_id]["kl"])
+            else:
+                logger.debug("No data for {}, not updating kl".format(pi_id))
+        # multi-agent
+        trainer.workers.local_worker().foreach_trainable_policy(update)
+
+
+def warn_about_obs_filter(trainer):
+    if "observation_filter" not in trainer.raw_user_config:
+        # TODO(ekl) remove this message after a few releases
+        logger.info(
+            "Important! Since 0.7.0, observation normalization is no "
+            "longer enabled by default. To enable running-mean "
+            "normalization, set 'observation_filter': 'MeanStdFilter'. "
+            "You can ignore this message if your environment doesn't "
+            "require observation normalization.")
+
+
+def warn_about_bad_reward_scales(trainer, result):
+    # Warn about bad clipping configs
+    if trainer.config["vf_clip_param"] <= 0:
+        rew_scale = float("inf")
+    elif result["policy_reward_mean"]:
+        rew_scale = 0  # punt on handling multiagent case
+    else:
+        rew_scale = round(
+            abs(result["episode_reward_mean"]) /
+            trainer.config["vf_clip_param"], 0)
+    if rew_scale > 200:
+        logger.warning(
+            "The magnitude of your environment rewards are more than "
+            "{}x the scale of `vf_clip_param`. ".format(rew_scale) +
+            "This means that it will take more than "
+            "{} iterations for your value ".format(rew_scale) +
+            "function to converge. If this is not intended, consider "
+            "increasing `vf_clip_param`.")
 
 
 def validate_config(config):
     if config["entropy_coeff"] < 0:
         raise DeprecationWarning("entropy_coeff must be >= 0")
+    if config["sgd_minibatch_size"] > config["train_batch_size"]:
+        raise ValueError(
+            "Minibatch size {} must be <= train batch size {}.".format(
+                config["sgd_minibatch_size"], config["train_batch_size"]))
+    if (config["batch_mode"] == "truncate_episodes" and not config["use_gae"]):
+        raise ValueError(
+            "Episode truncation is not supported without a value "
+            "function. Consider setting batch_mode=complete_episodes.")
+    if (config["multiagent"]["policies"] and not config["simple_optimizer"]):
+        logger.info(
+            "In multi-agent mode, policies will be optimized sequentially "
+            "by the multi-GPU optimizer. Consider setting "
+            "simple_optimizer=True if this doesn't work for you.")
+    if not config["vf_share_layers"]:
+        logger.warning(
+            "FYI: By default, the value function will not share layers "
+            "with the policy model ('vf_share_layers': False).")
 
 
-def defer_make_workers(trainer, env_creator, policy, config):
-    # Defer worker creation to after the optimizer has been created.
-    return trainer._make_workers(env_creator, policy, config, 0)
-
-
-def make_aggregators_and_optimizer(workers, config):
-    if config["num_aggregation_workers"] > 0:
-        # Create co-located aggregator actors first for placement pref
-        aggregators = TreeAggregator.precreate_aggregators(
-            config["num_aggregation_workers"])
-    else:
-        aggregators = None
-    workers.add_workers(config["num_workers"])
-
-    optimizer = AsyncSamplesOptimizer(
-        workers,
-        lr=config["lr"],
-        num_envs_per_worker=config["num_envs_per_worker"],
-        num_gpus=config["num_gpus"],
-        sample_batch_size=config["sample_batch_size"],
-        train_batch_size=config["train_batch_size"],
-        replay_buffer_num_slots=config["replay_buffer_num_slots"],
-        replay_proportion=config["replay_proportion"],
-        num_data_loader_buffers=config["num_data_loader_buffers"],
-        max_sample_requests_in_flight_per_worker=config[
-            "max_sample_requests_in_flight_per_worker"],
-        broadcast_interval=config["broadcast_interval"],
-        num_sgd_iter=config["num_sgd_iter"],
-        minibatch_buffer_size=config["minibatch_buffer_size"],
-        num_aggregation_workers=config["num_aggregation_workers"],
-        **config["optimizer"])
-
-    if aggregators:
-        # Assign the pre-created aggregators to the optimizer
-        optimizer.aggregator.init(aggregators)
-    return optimizer
-
-
-class OverrideDefaultResourceRequest(object):
-    @classmethod
-    @override(Trainable)
-    def default_resource_request(cls, config):
-        cf = dict(cls._default_config, **config)
-        Trainer._validate_config(cf)
-        return Resources(
-            cpu=cf["num_cpus_for_driver"],
-            gpu=cf["num_gpus"],
-            extra_cpu=cf["num_cpus_per_worker"] * cf["num_workers"] +
-            cf["num_aggregation_workers"],
-            extra_gpu=cf["num_gpus_per_worker"] * cf["num_workers"])
-
-
-MAMLTrainer = build_trainer(
+PPOTrainer = build_trainer(
     name="MAML",
     default_config=DEFAULT_CONFIG,
     default_policy=MAMLTFPolicy,
+    make_policy_optimizer=choose_policy_optimizer,
     validate_config=validate_config,
-    get_policy_class=choose_policy,
-    make_workers=defer_make_workers,
-    make_policy_optimizer=make_aggregators_and_optimizer,
-    mixins=[OverrideDefaultResourceRequest])
+    after_optimizer_step=update_kl,
+    before_train_step=warn_about_obs_filter,
+    after_train_result=warn_about_bad_reward_scales)

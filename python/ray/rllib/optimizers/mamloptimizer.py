@@ -68,7 +68,7 @@ class MAMLOptimizer(PolicyOptimizer):
             # Inner Adaptation Gradient Steps
             with self.inner_adaptation_timer[step]:
                 for i, e in enumerate(self.workers.remote_workers):
-                    e.learn_on_batch.remote(samples[i])
+                    e.learn_on_batch.remote(ray.put(samples[i]))
 
             # Post Adaptation Sampling from Workers
             with self.sample_timer[step+1]:

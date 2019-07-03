@@ -20,6 +20,8 @@ from ray.rllib.models.catalog import ModelCatalog
 from ray.rllib.utils.annotations import override
 from ray.rllib.utils.explained_variance import explained_variance
 from ray.rllib.utils import try_import_tf
+from ray.rllib.evaluation.postprocessing import compute_advantages, \
+    Postprocessing
 
 tf = try_import_tf()
 
@@ -27,159 +29,281 @@ tf = try_import_tf()
 BEHAVIOUR_LOGITS = "behaviour_logits"
 
 
-class VTraceLoss(object):
+class PPOLoss(object):
     def __init__(self,
+                 action_space,
+                 value_targets,
+                 advantages,
                  actions,
-                 actions_logp,
-                 actions_entropy,
-                 dones,
-                 behaviour_logits,
-                 target_logits,
-                 discount,
-                 rewards,
-                 values,
-                 bootstrap_value,
-                 dist_class,
+                 logits,
+                 vf_preds,
+                 curr_action_dist,
+                 value_fn,
+                 cur_kl_coeff,
                  valid_mask,
-                 vf_loss_coeff=0.5,
-                 entropy_coeff=0.01,
-                 clip_rho_threshold=1.0,
-                 clip_pg_rho_threshold=1.0):
-        """Policy gradient loss with vtrace importance weighting.
+                 entropy_coeff=0,
+                 clip_param=0.1,
+                 vf_clip_param=0.1,
+                 vf_loss_coeff=1.0
+                 ):
+        """Constructs the loss for Proximal Policy Objective.
 
-        VTraceLoss takes tensors of shape [T, B, ...], where `B` is the
-        batch_size. The reason we need to know `B` is for V-trace to properly
-        handle episode cut boundaries.
-
-        Args:
-            actions: An int|float32 tensor of shape [T, B, ACTION_SPACE].
-            actions_logp: A float32 tensor of shape [T, B].
-            actions_entropy: A float32 tensor of shape [T, B].
-            dones: A bool tensor of shape [T, B].
-            behaviour_logits: A list with length of ACTION_SPACE of float32
-                tensors of shapes
-                [T, B, ACTION_SPACE[0]],
-                ...,
-                [T, B, ACTION_SPACE[-1]]
-            target_logits: A list with length of ACTION_SPACE of float32
-                tensors of shapes
-                [T, B, ACTION_SPACE[0]],
-                ...,
-                [T, B, ACTION_SPACE[-1]]
-            discount: A float32 scalar.
-            rewards: A float32 tensor of shape [T, B].
-            values: A float32 tensor of shape [T, B].
-            bootstrap_value: A float32 tensor of shape [B].
-            dist_class: action distribution class for logits.
-            valid_mask: A bool tensor of valid RNN input elements (#2992).
+        Arguments:
+            action_space: Environment observation space specification.
+            value_targets (Placeholder): Placeholder for target values; used
+                for GAE.
+            actions (Placeholder): Placeholder for actions taken
+                from previous model evaluation.
+            advantages (Placeholder): Placeholder for calculated advantages
+                from previous model evaluation.
+            logits (Placeholder): Placeholder for logits output from
+                previous model evaluation.
+            vf_preds (Placeholder): Placeholder for value function output
+                from previous model evaluation.
+            curr_action_dist (ActionDistribution): ActionDistribution
+                of the current model.
+            value_fn (Tensor): Current value function output Tensor.
+            cur_kl_coeff (Variable): Variable holding the current PPO KL
+                coefficient.
+            valid_mask (Tensor): A bool mask of valid input elements (#2992).
+            entropy_coeff (float): Coefficient of the entropy regularizer.
+            clip_param (float): Clip parameter
+            vf_clip_param (float): Clip parameter for the value function
+            vf_loss_coeff (float): Coefficient of the value function loss
+            use_gae (bool): If true, use the Generalized Advantage Estimator.
         """
 
-        # Compute vtrace on the CPU for better perf.
-        with tf.device("/cpu:0"):
-            self.vtrace_returns = vtrace.multi_from_logits(
-                behaviour_policy_logits=behaviour_logits,
-                target_policy_logits=target_logits,
-                actions=tf.unstack(actions, axis=2),
-                discounts=tf.to_float(~dones) * discount,
-                rewards=rewards,
-                values=values,
-                bootstrap_value=bootstrap_value,
-                dist_class=dist_class,
-                clip_rho_threshold=tf.cast(clip_rho_threshold, tf.float32),
-                clip_pg_rho_threshold=tf.cast(clip_pg_rho_threshold,
-                                              tf.float32))
+        def reduce_mean_valid(t):
+            return tf.reduce_mean(tf.boolean_mask(t, valid_mask))
 
-        # The policy gradients loss
-        self.pi_loss = -tf.reduce_sum(
-            tf.boolean_mask(actions_logp * self.vtrace_returns.pg_advantages,
-                            valid_mask))
+        dist_cls, _ = ModelCatalog.get_action_dist(action_space, {})
+        prev_dist = dist_cls(logits)
+        # Make loss functions.
+        logp_ratio = tf.exp(
+            curr_action_dist.logp(actions) - prev_dist.logp(actions))
+        action_kl = prev_dist.kl(curr_action_dist)
+        self.mean_kl = reduce_mean_valid(action_kl)
 
-        # The baseline loss
-        delta = tf.boolean_mask(values - self.vtrace_returns.vs, valid_mask)
-        self.vf_loss = 0.5 * tf.reduce_sum(tf.square(delta))
+        curr_entropy = curr_action_dist.entropy()
+        self.mean_entropy = reduce_mean_valid(curr_entropy)
 
-        # The entropy loss
-        self.entropy = tf.reduce_sum(
-            tf.boolean_mask(actions_entropy, valid_mask))
+        surrogate_loss = tf.minimum(
+            advantages * logp_ratio,
+            advantages * tf.clip_by_value(logp_ratio, 1 - clip_param,
+                                          1 + clip_param))
+        self.mean_policy_loss = reduce_mean_valid(-surrogate_loss)
 
-        # The summed weighted loss
-        self.total_loss = (self.pi_loss + self.vf_loss * vf_loss_coeff -
-                           self.entropy * entropy_coeff)
+        vf_loss1 = tf.square(value_fn - value_targets)
+        vf_clipped = vf_preds + tf.clip_by_value(
+            value_fn - vf_preds, -vf_clip_param, vf_clip_param)
+        vf_loss2 = tf.square(vf_clipped - value_targets)
+        vf_loss = tf.maximum(vf_loss1, vf_loss2)
+        self.mean_vf_loss = reduce_mean_valid(vf_loss)
+        loss = reduce_mean_valid(
+            -surrogate_loss + cur_kl_coeff * action_kl +
+            vf_loss_coeff * vf_loss - entropy_coeff * curr_entropy)
+
+        self.loss = loss
+
+class MAMLLoss(object):
+    '''
+    Args:
+        policy-vars: tf.Variables from the policy model
+        obs: An int|float32 tensor of shape [B] + OBSERVATION_SPACE_SHAPE
+
+    '''
+    def __init__(self,
+                 action_space,
+                 value_targets,
+                 advantages,
+                 actions,
+                 logits,
+                 vf_preds,
+                 curr_action_dist,
+                 value_fn,
+                 cur_kl_coeff,
+                 valid_mask,
+                 entropy_coeff=0,
+                 clip_param=0.1,
+                 vf_clip_param=0.1,
+                 vf_loss_coeff=1.0
+                 ):
+    def __init__(self, 
+        policy_vars, 
+        obs, 
+        actions,
+        behaviour_logits, 
+        advantages,
+        dist_class,
+        num_tasks,
+        inner_adaptation_steps=1,
+        clip_param=0.3,
+        vf_clip_param=0.1,
+        vf_loss_coeff=1.0
+        ):
+
+        self.num_tasks = num_tasks
+        self.inner_adaptation_steps = inner_adaptation_steps
+        self.clip_param = clip_param
+        self.dist_class = dist_class
+        # Split episode tensors into [inner_adaptation_steps, num_tasks, -1]
+        self.obs = self.split_placeholders(obs)
+        self.actions = self.split_placeholders(actions)
+        self.behaviour_logits = self.split_placeholders(behaviour_logits)
+        self.advantages = self.split_placeholders(advantages)   
+
+        #Calculate pi_new for PPO
+        pi_new_logits, current_policy_vars= [], []
+        for i in range(self.num_tasks):
+            pi_new = self.feed_forward(obs[0][i], policy_vars)
+            pi_new_logits.append(pi_new)
+            current_policy_vars.append(policy_vars)
+
+        # Recompute weights for inner-adaptation (since this is also incoporated in meta objective loss function)
+        for step in range(self.inner_adaptation_steps):
+            for i in range(self.num_tasks):
+                surr_loss = self.surrogate_loss(self.actions[step][i], pi_new_logits[i], self.behaviour_logits[step][i], self.advantages[step][i])
+                adapted_policy_vars = self.compute_updated_variables(surr_loss, current_policy_vars[i])
+                pi_new_logits[i] = self.feed_forward(obs[step+1][i], adapted_policy_vars)
+                current_policy_vars[i] = adapted_policy_vars
+
+        surr_obj = []
+        for i in range(self.num_tasks):
+            surr_obj.append(self.surrogate_loss(self.actions[self.inner_adaptation_steps][i], pi_new_logits[i], 
+                self.behaviour_logits[self.inner_adaptation_steps][i], self.advantages[self.inner_adaptation_steps][i]))
+
+        self.loss = tf.reduce_mean(tf.stack(surr_obj, axis=0))
+
+    def feed_forward(self, obs, policy_vars):
+        return obs
+
+    def surrogate_loss(self, actions, pi_new_logits, pi_old_logits, advantages):
+        pi_new_logp = self.dist_class(pi_new_logits).logp(actions)
+        pi_old_logp = self.dist_class(pi_old_logits).logp(actions)
+
+        logp_ratio = tf.exp(pi_new_logp - pi_old_logp)
+
+        return tf.minimum(
+            advantages * logp_ratio,
+            advantages * tf.clip_by_value(logp_ratio, 1 - self.clip_param,
+                                          1 + self.clip_param))
+
+    def compute_updated_variables(self):
+        return 0
+
+    def split_placeholders(self, placeholder, inner_adaptation_steps, num_tasks):
+        inner_placeholder_list = tf.split(placeholder, inner_adaptation_steps, axis=0)
+        placeholder_list = []
+        for split_placeholder in inner_placeholder_list:
+            placeholder_list.append(tf.split(split_placeholder, num_tasks, axis=0))
+        return placeholder_list
 
 
-class VTracePostprocessing(object):
-    """Adds the policy logits to the trajectory."""
+
+class PPOPostprocessing(object):
+    """Adds the policy logits, VF preds, and advantages to the trajectory."""
 
     @override(TFPolicy)
     def extra_compute_action_fetches(self):
         return dict(
-            TFPolicy.extra_compute_action_fetches(self),
-            **{BEHAVIOUR_LOGITS: self.model.outputs})
+            TFPolicyGraph.extra_compute_action_fetches(self), **{
+                SampleBatch.VF_PREDS: self.value_function,
+                BEHAVIOUR_LOGITS: self.logits
+            })
 
     @override(Policy)
     def postprocess_trajectory(self,
                                sample_batch,
                                other_agent_batches=None,
                                episode=None):
-        # not used, so save some bandwidth
-        del sample_batch.data[SampleBatch.NEXT_OBS]
-        return sample_batch
+        completed = sample_batch["dones"][-1]
+        if completed:
+            last_r = 0.0
+        else:
+            next_state = []
+            for i in range(len(self.model.state_in)):
+                next_state.append([sample_batch["state_out_{}".format(i)][-1]])
+            last_r = self._value(sample_batch[SampleBatch.NEXT_OBS][-1],
+                                 sample_batch[SampleBatch.ACTIONS][-1],
+                                 sample_batch[SampleBatch.REWARDS][-1],
+                                 *next_state)
+        batch = compute_advantages(
+            sample_batch,
+            last_r,
+            self.config["gamma"],
+            self.config["lambda"],
+            use_gae=self.config["use_gae"])
+        return batch
 
 
-class MAMLTFPolicy(LearningRateSchedule, VTracePostprocessing, TFPolicy):
+
+class MAMLTFPolicy(LearningRateSchedule, MAMLPostprocessing, TFPolicy):
     def __init__(self,
                  observation_space,
                  action_space,
                  config,
                  existing_inputs=None):
-        config = dict(ray.rllib.agents.maml.maml.DEFAULT_CONFIG, **config)
-        assert config["batch_mode"] == "truncate_episodes", \
-            "Must use `truncate_episodes` batch mode with V-trace."
-        self.config = config
+        """
+        Arguments:
+            observation_space: Environment observation space specification.
+            action_space: Environment action space specification.
+            config (dict): Configuration values for PPO graph.
+            existing_inputs (list): Optional list of tuples that specify the
+                placeholders upon which the graph should be built upon.
+        """
+        config = dict(ray.rllib.agents.ppo.ppo.DEFAULT_CONFIG, **config)
         self.sess = tf.get_default_session()
-        self.grads = None
-
-        if isinstance(action_space, gym.spaces.Discrete):
-            is_multidiscrete = False
-            output_hidden_shape = [action_space.n]
-        elif isinstance(action_space, gym.spaces.multi_discrete.MultiDiscrete):
-            is_multidiscrete = True
-            output_hidden_shape = action_space.nvec.astype(np.int32)
-        else:
-            is_multidiscrete = False
-            output_hidden_shape = 1
-
-        # Create input placeholders
-        dist_class, logit_dim = ModelCatalog.get_action_dist(
+        self.action_space = action_space
+        self.config = config
+        self.kl_coeff_val = self.config["kl_coeff"]
+        self.kl_target = self.config["kl_target"]
+        dist_cls, logit_dim = ModelCatalog.get_action_dist(
             action_space, self.config["model"])
+
         if existing_inputs:
-            actions, dones, behaviour_logits, rewards, observations, \
-                prev_actions, prev_rewards = existing_inputs[:7]
-            existing_state_in = existing_inputs[7:-1]
+            obs_ph, value_targets_ph, adv_ph, act_ph, \
+                logits_ph, vf_preds_ph, prev_actions_ph, prev_rewards_ph = \
+                existing_inputs[:8]
+            existing_state_in = existing_inputs[8:-1]
             existing_seq_lens = existing_inputs[-1]
         else:
-            actions = ModelCatalog.get_action_placeholder(action_space)
-            dones = tf.placeholder(tf.bool, [None], name="dones")
-            rewards = tf.placeholder(tf.float32, [None], name="rewards")
-            behaviour_logits = tf.placeholder(
-                tf.float32, [None, logit_dim], name="behaviour_logits")
-            observations = tf.placeholder(
-                tf.float32, [None] + list(observation_space.shape))
+            obs_ph = tf.placeholder(
+                tf.float32,
+                name="obs",
+                shape=(None, ) + observation_space.shape)
+            adv_ph = tf.placeholder(
+                tf.float32, name="advantages", shape=(None, ))
+            act_ph = ModelCatalog.get_action_placeholder(action_space)
+            logits_ph = tf.placeholder(
+                tf.float32, name="logits", shape=(None, logit_dim))
+            vf_preds_ph = tf.placeholder(
+                tf.float32, name="vf_preds", shape=(None, ))
+            value_targets_ph = tf.placeholder(
+                tf.float32, name="value_targets", shape=(None, ))
+            prev_actions_ph = ModelCatalog.get_action_placeholder(action_space)
+            prev_rewards_ph = tf.placeholder(
+                tf.float32, [None], name="prev_reward")
             existing_state_in = None
             existing_seq_lens = None
+        self.observations = obs_ph
+        self.prev_actions = prev_actions_ph
+        self.prev_rewards = prev_rewards_ph
 
-        # Unpack behaviour logits
-        unpacked_behaviour_logits = tf.split(
-            behaviour_logits, output_hidden_shape, axis=1)
-
-        # Setup the policy
-        prev_actions = ModelCatalog.get_action_placeholder(action_space)
-        prev_rewards = tf.placeholder(tf.float32, [None], name="prev_reward")
+        self.loss_in = [
+            (SampleBatch.CUR_OBS, obs_ph),
+            (Postprocessing.VALUE_TARGETS, value_targets_ph),
+            (Postprocessing.ADVANTAGES, adv_ph),
+            (SampleBatch.ACTIONS, act_ph),
+            (BEHAVIOUR_LOGITS, logits_ph),
+            (SampleBatch.VF_PREDS, vf_preds_ph),
+            (SampleBatch.PREV_ACTIONS, prev_actions_ph),
+            (SampleBatch.PREV_REWARDS, prev_rewards_ph),
+        ]
         self.model = ModelCatalog.get_model(
             {
-                "obs": observations,
-                "prev_actions": prev_actions,
-                "prev_rewards": prev_rewards,
+                "obs": obs_ph,
+                "prev_actions": prev_actions_ph,
+                "prev_rewards": prev_rewards_ph,
                 "is_training": self._get_is_training_placeholder(),
             },
             observation_space,
@@ -188,156 +312,158 @@ class MAMLTFPolicy(LearningRateSchedule, VTracePostprocessing, TFPolicy):
             self.config["model"],
             state_in=existing_state_in,
             seq_lens=existing_seq_lens)
-        unpacked_outputs = tf.split(
-            self.model.outputs, output_hidden_shape, axis=1)
 
-        action_dist = dist_class(self.model.outputs)
+        # KL Coefficient
+        self.kl_coeff = tf.get_variable(
+            initializer=tf.constant_initializer(self.kl_coeff_val),
+            name="kl_coeff",
+            shape=(),
+            trainable=False,
+            dtype=tf.float32)
 
-        values = self.model.value_function()
-        self.var_list = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
-                                          tf.get_variable_scope().name)
-
-        def make_time_major(tensor, drop_last=False):
-            """Swaps batch and trajectory axis.
-            Args:
-                tensor: A tensor or list of tensors to reshape.
-                drop_last: A bool indicating whether to drop the last
-                trajectory item.
-            Returns:
-                res: A tensor with swapped axes or a list of tensors with
-                swapped axes.
-            """
-            if isinstance(tensor, list):
-                return [make_time_major(t, drop_last) for t in tensor]
-
-            if self.model.state_init:
-                B = tf.shape(self.model.seq_lens)[0]
-                T = tf.shape(tensor)[0] // B
+        self.logits = self.model.outputs
+        curr_action_dist = dist_cls(self.logits)
+        self.sampler = curr_action_dist.sample()
+        if self.config["use_gae"]:
+            if self.config["vf_share_layers"]:
+                self.value_function = self.model.value_function()
             else:
-                # Important: chop the tensor into batches at known episode cut
-                # boundaries. TODO(ekl) this is kind of a hack
-                T = self.config["sample_batch_size"]
-                B = tf.shape(tensor)[0] // T
-            rs = tf.reshape(tensor,
-                            tf.concat([[B, T], tf.shape(tensor)[1:]], axis=0))
-
-            # swap B and T axes
-            res = tf.transpose(
-                rs,
-                [1, 0] + list(range(2, 1 + int(tf.shape(tensor).shape[0]))))
-
-            if drop_last:
-                return res[:-1]
-            return res
+                vf_config = self.config["model"].copy()
+                # Do not split the last layer of the value function into
+                # mean parameters and standard deviation parameters and
+                # do not make the standard deviations free variables.
+                vf_config["free_log_std"] = False
+                if vf_config["use_lstm"]:
+                    vf_config["use_lstm"] = False
+                    logger.warning(
+                        "It is not recommended to use a LSTM model with "
+                        "vf_share_layers=False (consider setting it to True). "
+                        "If you want to not share layers, you can implement "
+                        "a custom LSTM model that overrides the "
+                        "value_function() method.")
+                with tf.variable_scope("value_function"):
+                    self.value_function = ModelCatalog.get_model({
+                        "obs": obs_ph,
+                        "prev_actions": prev_actions_ph,
+                        "prev_rewards": prev_rewards_ph,
+                        "is_training": self._get_is_training_placeholder(),
+                    }, observation_space, action_space, 1, vf_config).outputs
+                    self.value_function = tf.reshape(self.value_function, [-1])
+        else:
+            self.value_function = tf.zeros(shape=tf.shape(obs_ph)[:1])
 
         if self.model.state_in:
-            max_seq_len = tf.reduce_max(self.model.seq_lens) - 1
+            max_seq_len = tf.reduce_max(self.model.seq_lens)
             mask = tf.sequence_mask(self.model.seq_lens, max_seq_len)
             mask = tf.reshape(mask, [-1])
         else:
-            mask = tf.ones_like(rewards, dtype=tf.bool)
+            mask = tf.ones_like(adv_ph, dtype=tf.bool)
 
-        # Prepare actions for loss
-        loss_actions = actions if is_multidiscrete else tf.expand_dims(
-            actions, axis=1)
+        if self.is_worker:
+            self.loss_obj = PPOLoss(
+                action_space,
+                value_targets_ph,
+                adv_ph,
+                act_ph,
+                logits_ph,
+                vf_preds_ph,
+                curr_action_dist,
+                self.value_function,
+                self.kl_coeff,
+                mask,
+                entropy_coeff=self.config["entropy_coeff"],
+                clip_param=self.config["clip_param"],
+                vf_clip_param=self.config["vf_clip_param"],
+                vf_loss_coeff=self.config["vf_loss_coeff"],
+                use_gae=self.config["use_gae"])
+        else:
+            self.loss_obj = MAMLLoss() # in progress
 
-        # Inputs are reshaped from [B * T] => [T - 1, B] for V-trace calc.
-        self.loss = VTraceLoss(
-            actions=make_time_major(loss_actions, drop_last=True),
-            actions_logp=make_time_major(
-                action_dist.logp(actions), drop_last=True),
-            actions_entropy=make_time_major(
-                action_dist.entropy(), drop_last=True),
-            dones=make_time_major(dones, drop_last=True),
-            behaviour_logits=make_time_major(
-                unpacked_behaviour_logits, drop_last=True),
-            target_logits=make_time_major(unpacked_outputs, drop_last=True),
-            discount=config["gamma"],
-            rewards=make_time_major(rewards, drop_last=True),
-            values=make_time_major(values, drop_last=True),
-            bootstrap_value=make_time_major(values)[-1],
-            dist_class=Categorical if is_multidiscrete else dist_class,
-            valid_mask=make_time_major(mask, drop_last=True),
-            vf_loss_coeff=self.config["vf_loss_coeff"],
-            entropy_coeff=self.config["entropy_coeff"],
-            clip_rho_threshold=self.config["vtrace_clip_rho_threshold"],
-            clip_pg_rho_threshold=self.config["vtrace_clip_pg_rho_threshold"])
-
-        # Initialize TFPolicy
-        loss_in = [
-            (SampleBatch.ACTIONS, actions),
-            (SampleBatch.DONES, dones),
-            (BEHAVIOUR_LOGITS, behaviour_logits),
-            (SampleBatch.REWARDS, rewards),
-            (SampleBatch.CUR_OBS, observations),
-            (SampleBatch.PREV_ACTIONS, prev_actions),
-            (SampleBatch.PREV_REWARDS, prev_rewards),
-        ]
         LearningRateSchedule.__init__(self, self.config["lr"],
                                       self.config["lr_schedule"])
-        TFPolicy.__init__(
+        TFPolicyGraph.__init__(
             self,
             observation_space,
             action_space,
             self.sess,
-            obs_input=observations,
-            action_sampler=action_dist.sample(),
-            action_prob=action_dist.sampled_action_prob(),
-            loss=self.loss.total_loss,
+            obs_input=obs_ph,
+            action_sampler=self.sampler,
+            action_prob=curr_action_dist.sampled_action_prob(),
+            loss=self.loss_obj.loss,
             model=self.model,
-            loss_inputs=loss_in,
+            loss_inputs=self.loss_in,
             state_inputs=self.model.state_in,
             state_outputs=self.model.state_out,
-            prev_action_input=prev_actions,
-            prev_reward_input=prev_rewards,
+            prev_action_input=prev_actions_ph,
+            prev_reward_input=prev_rewards_ph,
             seq_lens=self.model.seq_lens,
-            max_seq_len=self.config["model"]["max_seq_len"],
-            batch_divisibility_req=self.config["sample_batch_size"])
+            max_seq_len=config["model"]["max_seq_len"])
 
         self.sess.run(tf.global_variables_initializer())
-
+        self.explained_variance = explained_variance(value_targets_ph,
+                                                     self.value_function)
         self.stats_fetches = {
-            LEARNER_STATS_KEY: {
-                "cur_lr": tf.cast(self.cur_lr, tf.float64),
-                "policy_loss": self.loss.pi_loss,
-                "entropy": self.loss.entropy,
-                "grad_gnorm": tf.global_norm(self._grads),
-                "var_gnorm": tf.global_norm(self.var_list),
-                "vf_loss": self.loss.vf_loss,
-                "vf_explained_var": explained_variance(
-                    tf.reshape(self.loss.vtrace_returns.vs, [-1]),
-                    tf.reshape(make_time_major(values, drop_last=True), [-1])),
-            },
+            "cur_kl_coeff": self.kl_coeff,
+            "cur_lr": tf.cast(self.cur_lr, tf.float64),
+            "total_loss": self.loss_obj.loss,
+            "policy_loss": self.loss_obj.mean_policy_loss,
+            "vf_loss": self.loss_obj.mean_vf_loss,
+            "vf_explained_var": self.explained_variance,
+            "kl": self.loss_obj.mean_kl,
+            "entropy": self.loss_obj.mean_entropy
         }
 
-    @override(TFPolicy)
+    @override(TFPolicyGraph)
     def copy(self, existing_inputs):
-        return VTraceTFPolicy(
+        """Creates a copy of self using existing input placeholders."""
+        return PPOPolicyGraph(
             self.observation_space,
             self.action_space,
             self.config,
             existing_inputs=existing_inputs)
 
-    @override(TFPolicy)
-    def optimizer(self):
-        if self.config["opt_type"] == "adam":
-            return tf.train.AdamOptimizer(self.cur_lr)
-        else:
-            return tf.train.RMSPropOptimizer(self.cur_lr, self.config["decay"],
-                                             self.config["momentum"],
-                                             self.config["epsilon"])
-
-    @override(TFPolicy)
+    @override(TFPolicyGraph)
     def gradients(self, optimizer, loss):
-        grads = tf.gradients(loss, self.var_list)
-        self.grads, _ = tf.clip_by_global_norm(grads, self.config["grad_clip"])
-        clipped_grads = list(zip(self.grads, self.var_list))
-        return clipped_grads
+        if self.config["grad_clip"] is not None:
+            self.var_list = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
+                                              tf.get_variable_scope().name)
+            grads = tf.gradients(loss, self.var_list)
+            self.grads, _ = tf.clip_by_global_norm(grads,
+                                                   self.config["grad_clip"])
+            clipped_grads = list(zip(self.grads, self.var_list))
+            return clipped_grads
+        else:
+            return optimizer.compute_gradients(
+                loss, colocate_gradients_with_ops=True)
 
-    @override(TFPolicy)
-    def extra_compute_grad_fetches(self):
-        return self.stats_fetches
-
-    @override(Policy)
+    @override(PolicyGraph)
     def get_initial_state(self):
         return self.model.state_init
+
+    @override(TFPolicyGraph)
+    def extra_compute_grad_fetches(self):
+        return {LEARNER_STATS_KEY: self.stats_fetches}
+
+    def update_kl(self, sampled_kl):
+        print(self.kl_coeff_val)
+        if sampled_kl > 2.0 * self.kl_target:
+            self.kl_coeff_val *= 1.5
+        elif sampled_kl < 0.5 * self.kl_target:
+            self.kl_coeff_val *= 0.5
+        self.kl_coeff.load(self.kl_coeff_val, session=self.sess)
+        print(sampled_kl, self.kl_target, self.kl_coeff_val)
+        return self.kl_coeff_val
+
+    def _value(self, ob, prev_action, prev_reward, *args):
+        feed_dict = {
+            self.observations: [ob],
+            self.prev_actions: [prev_action],
+            self.prev_rewards: [prev_reward],
+            self.model.seq_lens: [1]
+        }
+        assert len(args) == len(self.model.state_in), \
+            (args, self.model.state_in)
+        for k, v in zip(self.model.state_in, args):
+            feed_dict[k] = v
+        vf = self.sess.run(self.value_function, feed_dict)
+        return vf[0]
