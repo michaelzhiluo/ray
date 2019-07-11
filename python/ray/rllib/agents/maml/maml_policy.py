@@ -112,22 +112,6 @@ class MAMLLoss(object):
         obs: An int|float32 tensor of shape [B] + OBSERVATION_SPACE_SHAPE
 
     '''
-    def __init__(self,
-                 action_space,
-                 value_targets,
-                 advantages,
-                 actions,
-                 logits,
-                 vf_preds,
-                 curr_action_dist,
-                 value_fn,
-                 cur_kl_coeff,
-                 valid_mask,
-                 entropy_coeff=0,
-                 clip_param=0.1,
-                 vf_clip_param=0.1,
-                 vf_loss_coeff=1.0
-                 ):
     def __init__(self, 
         policy_vars, 
         obs, 
@@ -199,14 +183,13 @@ class MAMLLoss(object):
         return placeholder_list
 
 
-
-class PPOPostprocessing(object):
+class MAMLPostprocessing(object):
     """Adds the policy logits, VF preds, and advantages to the trajectory."""
 
     @override(TFPolicy)
     def extra_compute_action_fetches(self):
         return dict(
-            TFPolicyGraph.extra_compute_action_fetches(self), **{
+            TFPolicy.extra_compute_action_fetches(self), **{
                 SampleBatch.VF_PREDS: self.value_function,
                 BEHAVIOUR_LOGITS: self.logits
             })
@@ -236,7 +219,6 @@ class PPOPostprocessing(object):
         return batch
 
 
-
 class MAMLTFPolicy(LearningRateSchedule, MAMLPostprocessing, TFPolicy):
     def __init__(self,
                  observation_space,
@@ -251,7 +233,7 @@ class MAMLTFPolicy(LearningRateSchedule, MAMLPostprocessing, TFPolicy):
             existing_inputs (list): Optional list of tuples that specify the
                 placeholders upon which the graph should be built upon.
         """
-        config = dict(ray.rllib.agents.ppo.ppo.DEFAULT_CONFIG, **config)
+        config = dict(ray.rllib.agents.maml.maml.DEFAULT_CONFIG, **config)
         self.sess = tf.get_default_session()
         self.action_space = action_space
         self.config = config
@@ -359,29 +341,25 @@ class MAMLTFPolicy(LearningRateSchedule, MAMLPostprocessing, TFPolicy):
         else:
             mask = tf.ones_like(adv_ph, dtype=tf.bool)
 
-        if self.is_worker:
-            self.loss_obj = PPOLoss(
-                action_space,
-                value_targets_ph,
-                adv_ph,
-                act_ph,
-                logits_ph,
-                vf_preds_ph,
-                curr_action_dist,
-                self.value_function,
-                self.kl_coeff,
-                mask,
-                entropy_coeff=self.config["entropy_coeff"],
-                clip_param=self.config["clip_param"],
-                vf_clip_param=self.config["vf_clip_param"],
-                vf_loss_coeff=self.config["vf_loss_coeff"],
-                use_gae=self.config["use_gae"])
-        else:
-            self.loss_obj = MAMLLoss() # in progress
+        self.loss_obj = PPOLoss(
+            action_space,
+            value_targets_ph,
+            adv_ph,
+            act_ph,
+            logits_ph,
+            vf_preds_ph,
+            curr_action_dist,
+            self.value_function,
+            self.kl_coeff,
+            mask,
+            entropy_coeff=self.config["entropy_coeff"],
+            clip_param=self.config["clip_param"],
+            vf_clip_param=self.config["vf_clip_param"],
+            vf_loss_coeff=self.config["vf_loss_coeff"])
 
         LearningRateSchedule.__init__(self, self.config["lr"],
                                       self.config["lr_schedule"])
-        TFPolicyGraph.__init__(
+        TFPolicy.__init__(
             self,
             observation_space,
             action_space,
@@ -413,16 +391,16 @@ class MAMLTFPolicy(LearningRateSchedule, MAMLPostprocessing, TFPolicy):
             "entropy": self.loss_obj.mean_entropy
         }
 
-    @override(TFPolicyGraph)
+    @override(TFPolicy)
     def copy(self, existing_inputs):
         """Creates a copy of self using existing input placeholders."""
-        return PPOPolicyGraph(
+        return MAMLTFPolicy(
             self.observation_space,
             self.action_space,
             self.config,
             existing_inputs=existing_inputs)
 
-    @override(TFPolicyGraph)
+    @override(TFPolicy)
     def gradients(self, optimizer, loss):
         if self.config["grad_clip"] is not None:
             self.var_list = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
@@ -436,22 +414,20 @@ class MAMLTFPolicy(LearningRateSchedule, MAMLPostprocessing, TFPolicy):
             return optimizer.compute_gradients(
                 loss, colocate_gradients_with_ops=True)
 
-    @override(PolicyGraph)
+    @override(Policy)
     def get_initial_state(self):
         return self.model.state_init
 
-    @override(TFPolicyGraph)
+    @override(TFPolicy)
     def extra_compute_grad_fetches(self):
         return {LEARNER_STATS_KEY: self.stats_fetches}
 
     def update_kl(self, sampled_kl):
-        print(self.kl_coeff_val)
         if sampled_kl > 2.0 * self.kl_target:
             self.kl_coeff_val *= 1.5
         elif sampled_kl < 0.5 * self.kl_target:
             self.kl_coeff_val *= 0.5
         self.kl_coeff.load(self.kl_coeff_val, session=self.sess)
-        print(sampled_kl, self.kl_target, self.kl_coeff_val)
         return self.kl_coeff_val
 
     def _value(self, ob, prev_action, prev_reward, *args):

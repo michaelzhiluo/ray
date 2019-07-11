@@ -2,13 +2,17 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import logging 
+
 from ray.rllib.agents.maml.maml_policy import MAMLTFPolicy
 from ray.rllib.agents.trainer import Trainer, with_common_config
 from ray.rllib.agents.trainer_template import build_trainer
-from ray.rllib.optimizers import MAMLOptimizer
+from ray.rllib.optimizers import SyncSamplesOptimizer, LocalMultiGPUOptimizer
 from ray.rllib.utils.annotations import override
 from ray.tune.trainable import Trainable
 from ray.tune.trial import Resources
+
+logger = logging.getLogger(__name__)
 
 # yapf: disable
 # __sphinx_doc_begin__
@@ -51,9 +55,6 @@ DEFAULT_CONFIG = with_common_config({
     "batch_mode": "truncate_episodes",
     # Which observation filter to apply to the observation
     "observation_filter": "NoFilter",
-    # Uses the sync samples optimizer instead of the multi-gpu one. This does
-    # not support minibatches.
-    "simple_optimizer": False,
     # (Deprecated) Use the sampling behavior as of 0.6, which launches extra
     # sampling tasks for performance but can waste a large portion of samples.
     "straggler_mitigation": False,
@@ -61,86 +62,93 @@ DEFAULT_CONFIG = with_common_config({
 # __sphinx_doc_end__
 # yapf: enable
 
-def choose_policy_optimizer(workers, config):
-    return MAMLOptimizer(
-        workers,
-        num_sgd_iter=config["num_sgd_iter"],
-        train_batch_size=config["train_batch_size"])
+class MAMLTrainer(Trainer):
 
-def update_kl(trainer, fetches):
-    if "kl" in fetches:
-        # single-agent
-        trainer.workers.local_worker().for_policy(
-            lambda pi: pi.update_kl(fetches["kl"]))
-    else:
-        def update(pi, pi_id):
-            if pi_id in fetches:
-                pi.update_kl(fetches[pi_id]["kl"])
-            else:
-                logger.debug("No data for {}, not updating kl".format(pi_id))
-        # multi-agent
-        trainer.workers.local_worker().foreach_trainable_policy(update)
+    _name = "MAML"
+    _default_config = DEFAULT_CONFIG
+    _policy_graph = MAMLTFPolicy
 
+    @override(Trainer)
+    def _init(self, config, env_creator):
+        self._validate_config()
+        self.workers = self._make_workers(
+            env_creator, self._policy_graph, config, config["num_workers"])
+        self.optimizer = SyncSamplesOptimizer(
+            self.workers,
+            num_sgd_iter=config["num_sgd_iter"],
+            train_batch_size=config["train_batch_size"])
 
-def warn_about_obs_filter(trainer):
-    if "observation_filter" not in trainer.raw_user_config:
-        # TODO(ekl) remove this message after a few releases
-        logger.info(
-            "Important! Since 0.7.0, observation normalization is no "
-            "longer enabled by default. To enable running-mean "
-            "normalization, set 'observation_filter': 'MeanStdFilter'. "
-            "You can ignore this message if your environment doesn't "
-            "require observation normalization.")
+    @override(Trainer)
+    def _train(self):
+        if "observation_filter" not in self.raw_user_config:
+            # TODO(ekl) remove this message after a few releases
+            logger.info(
+                "Important! Since 0.7.0, observation normalization is no "
+                "longer enabled by default. To enable running-mean "
+                "normalization, set 'observation_filter': 'MeanStdFilter'. "
+                "You can ignore this message if your environment doesn't "
+                "require observation normalization.")
+        prev_steps = self.optimizer.num_steps_sampled
+        fetches = self.optimizer.step()
+        if "kl" in fetches:
+            # single-agent
+            self.workers.local_worker().for_policy(
+                lambda pi: pi.update_kl(fetches["kl"]))
+        else:
 
+            def update(pi, pi_id):
+                if pi_id in fetches:
+                    pi.update_kl(fetches[pi_id]["kl"])
+                else:
+                    logger.debug(
+                        "No data for {}, not updating kl".format(pi_id))
 
-def warn_about_bad_reward_scales(trainer, result):
-    # Warn about bad clipping configs
-    if trainer.config["vf_clip_param"] <= 0:
-        rew_scale = float("inf")
-    elif result["policy_reward_mean"]:
-        rew_scale = 0  # punt on handling multiagent case
-    else:
-        rew_scale = round(
-            abs(result["episode_reward_mean"]) /
-            trainer.config["vf_clip_param"], 0)
-    if rew_scale > 200:
-        logger.warning(
-            "The magnitude of your environment rewards are more than "
-            "{}x the scale of `vf_clip_param`. ".format(rew_scale) +
-            "This means that it will take more than "
-            "{} iterations for your value ".format(rew_scale) +
-            "function to converge. If this is not intended, consider "
-            "increasing `vf_clip_param`.")
+            # multi-agent
+            self.workers.local_worker().foreach_trainable_policy(update)
+        res = self.collect_metrics()
+        res.update(
+            timesteps_this_iter=self.optimizer.num_steps_sampled - prev_steps,
+            info=res.get("info", {}))
 
+        # Warn about bad clipping configs
+        if self.config["vf_clip_param"] <= 0:
+            rew_scale = float("inf")
+        elif res["policy_reward_mean"]:
+            rew_scale = 0  # punt on handling multiagent case
+        else:
+            rew_scale = round(
+                abs(res["episode_reward_mean"]) / self.config["vf_clip_param"],
+                0)
+        if rew_scale > 200:
+            logger.warning(
+                "The magnitude of your environment rewards are more than "
+                "{}x the scale of `vf_clip_param`. ".format(rew_scale) +
+                "This means that it will take more than "
+                "{} iterations for your value ".format(rew_scale) +
+                "function to converge. If this is not intended, consider "
+                "increasing `vf_clip_param`.")
+        return res
 
-def validate_config(config):
-    if config["entropy_coeff"] < 0:
-        raise DeprecationWarning("entropy_coeff must be >= 0")
-    if config["sgd_minibatch_size"] > config["train_batch_size"]:
-        raise ValueError(
-            "Minibatch size {} must be <= train batch size {}.".format(
-                config["sgd_minibatch_size"], config["train_batch_size"]))
-    if (config["batch_mode"] == "truncate_episodes" and not config["use_gae"]):
-        raise ValueError(
-            "Episode truncation is not supported without a value "
-            "function. Consider setting batch_mode=complete_episodes.")
-    if (config["multiagent"]["policies"] and not config["simple_optimizer"]):
-        logger.info(
-            "In multi-agent mode, policies will be optimized sequentially "
-            "by the multi-GPU optimizer. Consider setting "
-            "simple_optimizer=True if this doesn't work for you.")
-    if not config["vf_share_layers"]:
-        logger.warning(
-            "FYI: By default, the value function will not share layers "
-            "with the policy model ('vf_share_layers': False).")
-
-
-PPOTrainer = build_trainer(
-    name="MAML",
-    default_config=DEFAULT_CONFIG,
-    default_policy=MAMLTFPolicy,
-    make_policy_optimizer=choose_policy_optimizer,
-    validate_config=validate_config,
-    after_optimizer_step=update_kl,
-    before_train_step=warn_about_obs_filter,
-    after_train_result=warn_about_bad_reward_scales)
+    def _validate_config(self):
+        if self.config["entropy_coeff"] < 0:
+            raise DeprecationWarning("entropy_coeff must be >= 0")
+        if self.config["sgd_minibatch_size"] > self.config["train_batch_size"]:
+            raise ValueError(
+                "Minibatch size {} must be <= train batch size {}.".format(
+                    self.config["sgd_minibatch_size"],
+                    self.config["train_batch_size"]))
+        if (self.config["batch_mode"] == "truncate_episodes"
+                and not self.config["use_gae"]):
+            raise ValueError(
+                "Episode truncation is not supported without a value "
+                "function. Consider setting batch_mode=complete_episodes.")
+        if (self.config["multiagent"]["policies"]
+                and not self.config["simple_optimizer"]):
+            logger.info(
+                "In multi-agent mode, policies will be optimized sequentially "
+                "by the multi-GPU optimizer. Consider setting "
+                "simple_optimizer=True if this doesn't work for you.")
+        if not self.config["vf_share_layers"]:
+            logger.warning(
+                "FYI: By default, the value function will not share layers "
+                "with the policy model ('vf_share_layers': False).")
