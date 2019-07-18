@@ -73,4 +73,7 @@ class MAMLOptimizer(PolicyOptimizer):
             fetches = self.workers.local_worker().learn_on_batch(all_samples)
             #self.learner_stats = get_learner_stats(fetches)
 
+        self.num_steps_sampled += all_samples.count
+        self.num_steps_trained += all_samples.count
+
         return self.learner_stats

@@ -93,6 +93,7 @@ class PPOLoss(object):
                                           1 + clip_param))
         self.mean_policy_loss = reduce_mean_valid(-surrogate_loss)
 
+        # GAE Value Function Loss
         vf_loss1 = tf.square(value_fn - value_targets)
         vf_clipped = vf_preds + tf.clip_by_value(
             value_fn - vf_preds, -vf_clip_param, vf_clip_param)
@@ -106,34 +107,47 @@ class PPOLoss(object):
         self.loss = loss
 
 class MAMLLoss(object):
-    def __init__(self, 
-        policy_vars, 
-        obs, 
-        actions,
-        behaviour_logits, 
-        advantages,
-        dist_class,
-        num_tasks,
-        inner_adaptation_steps=1,
-        clip_param=0.3,
-        vf_clip_param=0.1,
-        vf_loss_coeff=1.0
-        ):
+
+    def __init__(self,
+            config,
+            dist_class, 
+            value_targets,
+            advantages,
+            actions,
+            behaviour_logits,
+            vf_preds,
+            cur_kl_coeff,
+            valid_mask, 
+            policy_vars, 
+            obs, 
+            num_tasks,
+            inner_adaptation_steps=1,
+            entropy_coeff=0,
+            clip_param=0.3,
+            vf_clip_param=0.1,
+            vf_loss_coeff=1.0):
 
         self.num_tasks = num_tasks
         self.inner_adaptation_steps = inner_adaptation_steps
         self.clip_param = clip_param
         self.dist_class = dist_class
+        self.cur_kl_coeff = cur_kl_coeff
+
         # Split episode tensors into [inner_adaptation_steps, num_tasks, -1]
         self.obs = self.split_placeholders(obs)
         self.actions = self.split_placeholders(actions)
         self.behaviour_logits = self.split_placeholders(behaviour_logits)
         self.advantages = self.split_placeholders(advantages)
+        self.value_targets = self.split_placeholders(value_targets)
+        self.vf_preds = self.split_placeholders(vf_preds)
+        self.valid_mask = self.split_placeholders(valid_mask)
 
-        #Calculate pi_new for PPO
-        pi_new_logits, current_policy_vars= [], []
+        import pdb; pdb.set_trace()
+
+        # Calculate pi_new for PPO
+        pi_new_logits, current_policy_vars = [], []
         for i in range(self.num_tasks):
-            pi_new = self.feed_forward(obs[0][i], policy_vars)
+            pi_new = self.feed_forward(obs[0][i], policy_vars, policy_config = config["model"])
             pi_new_logits.append(pi_new)
             current_policy_vars.append(policy_vars)
 
@@ -152,8 +166,41 @@ class MAMLLoss(object):
 
         self.loss = tf.reduce_mean(tf.stack(surr_obj, axis=0))
 
-    def feed_forward(self, obs, policy_vars):
-        return obs
+    def feed_forward(self, obs, policy_vars, policy_config = None):
+        # Hacky for now, assumes it is Fully connected network in models/fcnet.py
+        # Returns pi_new_logits and value_function_prediction
+        x = obs
+        idx = 0
+        bias_added = False
+
+        output_nonlinearity = tf.identity
+        hidden_nonlinearity = tf.tanh
+
+        for name, param in policy_vars.items():
+            if 'value_function' in name: 
+                break
+            if "kernel" in name:
+                x = tf.matmul(x, param)
+            elif "bias" in name:
+                x = tf.add(x, param)
+                bias_added = True
+            else:
+                raise NameError
+
+            if bias_added:
+                if "fc_out" not in name:
+                    x = hidden_nonlinearity(x)
+                elif "fc_out" in name:
+                    x = output_nonlinearity(x)
+                else:
+                    raise NameError
+                idx += 1
+                bias_added = False
+        pi_new_logits = x
+        return pi_new_logits, value_fn
+
+    def reduce_mean_valid(t, valid_mask):
+        return tf.reduce_mean(tf.boolean_mask(t, valid_mask))
 
     def surrogate_loss(self, actions, pi_new_logits, pi_old_logits, advantages):
         pi_new_logp = self.dist_class(pi_new_logits).logp(actions)
@@ -165,15 +212,26 @@ class MAMLLoss(object):
             advantages * logp_ratio,
             advantages * tf.clip_by_value(logp_ratio, 1 - self.clip_param,
                                           1 + self.clip_param))
+    def kl_loss(self, ):
 
-    def compute_updated_variables(self):
+
+    def value_loss(self, value_fn, value_targets, vf_preds, valid_mask, vf_clip_param=0.1):
+        # GAE Value Function Loss
+        vf_loss1 = tf.square(value_fn - value_targets)
+        vf_clipped = vf_preds + tf.clip_by_value(
+            value_fn - vf_preds, -vf_clip_param, vf_clip_param)
+        vf_loss2 = tf.square(vf_clipped - value_targets)
+        vf_loss = tf.maximum(vf_loss1, vf_loss2)
+        self.mean_vf_loss = reduce_mean_valid(vf_loss)
+
+    def compute_updated_variables(self, loss):
         return 0
 
-    def split_placeholders(self, placeholder, inner_adaptation_steps, num_tasks):
-        inner_placeholder_list = tf.split(placeholder, inner_adaptation_steps, axis=0)
+    def split_placeholders(self, placeholder):
+        inner_placeholder_list = tf.split(placeholder, self.inner_adaptation_steps+1, axis=0)
         placeholder_list = []
         for split_placeholder in inner_placeholder_list:
-            placeholder_list.append(tf.split(split_placeholder, num_tasks, axis=0))
+            placeholder_list.append(tf.split(split_placeholder, self.num_tasks, axis=0))
         return placeholder_list
 
 
@@ -228,6 +286,7 @@ class MAMLTFPolicy(LearningRateSchedule, MAMLPostprocessing, TFPolicy):
                 placeholders upon which the graph should be built upon.
         """
         config = dict(ray.rllib.agents.maml.maml.DEFAULT_CONFIG, **config)
+        print(config)
         self.sess = tf.get_default_session()
         self.action_space = action_space
         self.config = config
@@ -335,21 +394,46 @@ class MAMLTFPolicy(LearningRateSchedule, MAMLPostprocessing, TFPolicy):
         else:
             mask = tf.ones_like(adv_ph, dtype=tf.bool)
 
-        self.loss_obj = PPOLoss(
-            action_space,
-            value_targets_ph,
-            adv_ph,
-            act_ph,
-            logits_ph,
-            vf_preds_ph,
-            curr_action_dist,
-            self.value_function,
-            self.kl_coeff,
-            mask,
-            entropy_coeff=self.config["entropy_coeff"],
-            clip_param=self.config["clip_param"],
-            vf_clip_param=self.config["vf_clip_param"],
-            vf_loss_coeff=self.config["vf_loss_coeff"])
+        self.var_list = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
+                                              tf.get_variable_scope().name)
+        # If you are a task or worker, compute normal PPO Loss for inner adaptation update
+        if self.config["worker_index"]:
+            self.loss_obj = PPOLoss(
+                action_space,
+                value_targets_ph,
+                adv_ph,
+                act_ph,
+                logits_ph,
+                vf_preds_ph,
+                curr_action_dist,
+                self.value_function,
+                self.kl_coeff,
+                mask,
+                entropy_coeff=self.config["entropy_coeff"],
+                clip_param=self.config["clip_param"],
+                vf_clip_param=self.config["vf_clip_param"],
+                vf_loss_coeff=self.config["vf_loss_coeff"])
+        else:
+            # If you are the master learner, compute meta-gradient objective
+            self.loss_obj = MAMLLoss(
+                config = self.config,
+                dist_class = dist_cls, 
+                value_targets = value_targets_ph,
+                advantages = adv_ph,
+                actions = act_ph,
+                behaviour_logits = logits_ph,
+                vf_preds = vf_preds_ph,
+                cur_kl_coeff = self.kl_coeff,
+                valid_mask = mask, 
+                policy_vars = self.var_list, 
+                obs = obs_ph,  
+                num_tasks = self.config["num_workers"],
+                inner_adaptation_steps=1,
+                entropy_coeff=0,
+                clip_param=0.3,
+                vf_clip_param=0.1,
+                vf_loss_coeff=1.0
+                )
 
         LearningRateSchedule.__init__(self, self.config["lr"],
                                       self.config["lr_schedule"])

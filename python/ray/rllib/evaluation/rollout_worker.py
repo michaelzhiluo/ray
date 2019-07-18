@@ -719,6 +719,7 @@ class RolloutWorker(EvaluatorInterface):
                     "Tuple|DictFlatteningPreprocessor.")
             if tf:
                 with tf.variable_scope(name):
+                    merged_conf["worker_index"] = self.worker_index
                     policy_map[name] = cls(obs_space, act_space, merged_conf)
             else:
                 policy_map[name] = cls(obs_space, act_space, merged_conf)
