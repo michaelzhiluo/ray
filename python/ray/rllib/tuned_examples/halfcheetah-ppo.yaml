@@ -1,5 +1,5 @@
 halfcheetah-ppo:
-    env: HalfCheetahRandDirec-v2
+    env: HalfCheetahRandDirec-v2 #HalfCheetah-v2 #HalfCheetahRandDirec-v2
     run: MAML
     stop:
         episode_reward_mean: 9800
@@ -12,9 +12,9 @@ halfcheetah-ppo:
         lr: .0003
         vf_loss_coeff: 0.5
         clip_param: 0.2
-        sgd_minibatch_size: 4096
+        sgd_minibatch_size: 512
         train_batch_size: 65536
-        num_workers: 16
+        num_workers: 1 #16
         num_gpus: 1
         grad_clip: 0.5
         num_envs_per_worker: 32

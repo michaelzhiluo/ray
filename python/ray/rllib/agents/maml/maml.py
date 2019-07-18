@@ -7,7 +7,7 @@ import logging
 from ray.rllib.agents.maml.maml_policy import MAMLTFPolicy
 from ray.rllib.agents.trainer import Trainer, with_common_config
 from ray.rllib.agents.trainer_template import build_trainer
-from ray.rllib.optimizers import SyncSamplesOptimizer, LocalMultiGPUOptimizer
+from ray.rllib.optimizers import SyncSamplesOptimizer, LocalMultiGPUOptimizer, MAMLOptimizer
 from ray.rllib.utils.annotations import override
 from ray.tune.trainable import Trainable
 from ray.tune.trial import Resources
@@ -73,9 +73,9 @@ class MAMLTrainer(Trainer):
         self._validate_config()
         self.workers = self._make_workers(
             env_creator, self._policy_graph, config, config["num_workers"])
-        self.optimizer = SyncSamplesOptimizer(
+        self.optimizer = MAMLOptimizer(
             self.workers,
-            num_sgd_iter=config["num_sgd_iter"],
+            #num_sgd_iter=config["num_sgd_iter"],
             train_batch_size=config["train_batch_size"])
 
     @override(Trainer)

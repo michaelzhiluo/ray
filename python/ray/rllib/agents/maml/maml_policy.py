@@ -106,12 +106,6 @@ class PPOLoss(object):
         self.loss = loss
 
 class MAMLLoss(object):
-    '''
-    Args:
-        policy-vars: tf.Variables from the policy model
-        obs: An int|float32 tensor of shape [B] + OBSERVATION_SPACE_SHAPE
-
-    '''
     def __init__(self, 
         policy_vars, 
         obs, 
@@ -134,7 +128,7 @@ class MAMLLoss(object):
         self.obs = self.split_placeholders(obs)
         self.actions = self.split_placeholders(actions)
         self.behaviour_logits = self.split_placeholders(behaviour_logits)
-        self.advantages = self.split_placeholders(advantages)   
+        self.advantages = self.split_placeholders(advantages)
 
         #Calculate pi_new for PPO
         pi_new_logits, current_policy_vars= [], []
