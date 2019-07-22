@@ -22,6 +22,7 @@ from ray.rllib.utils.explained_variance import explained_variance
 from ray.rllib.utils import try_import_tf
 from ray.rllib.evaluation.postprocessing import compute_advantages, \
     Postprocessing
+from ray.rllib.models.misc import normc_initializer, get_activation_fn
 
 tf = try_import_tf()
 
@@ -142,21 +143,37 @@ class MAMLLoss(object):
         self.vf_preds = self.split_placeholders(vf_preds)
         self.valid_mask = self.split_placeholders(valid_mask)
 
-        import pdb; pdb.set_trace()
-
         # Calculate pi_new for PPO
-        pi_new_logits, current_policy_vars = [], []
+        pi_new_logits, current_policy_vars, value_fns = [], [], []
         for i in range(self.num_tasks):
-            pi_new = self.feed_forward(obs[0][i], policy_vars, policy_config = config["model"])
+            pi_new, value_fn = self.feed_forward(self.obs[0][i], policy_vars, policy_config = config["model"])
             pi_new_logits.append(pi_new)
+            value_fns.append(value_fn)
             current_policy_vars.append(policy_vars)
 
+        inner_kls = []
         # Recompute weights for inner-adaptation (since this is also incoporated in meta objective loss function)
         for step in range(self.inner_adaptation_steps):
             for i in range(self.num_tasks):
-                surr_loss = self.surrogate_loss(self.actions[step][i], pi_new_logits[i], self.behaviour_logits[step][i], self.advantages[step][i])
+                # Loss Function Shenanigans
+                ppo_loss, _, kl_loss, _, _ = self.PPOLoss(
+                    self.actions[step][i],
+                    pi_new_logits[i],
+                    self.behaviour_logits[step][i],
+                    self.advantages[step][i],
+                    value_fns[i],
+                    self.value_targets[step][i],
+                    self.vf_preds[step][i],
+                    cur_kl_coeff,
+                    self.valid_mask[step][i],
+                    entropy_coeff,
+                    clip_param,
+                    vf_clip_param,
+                    vf_loss_coeff
+                    )
+
                 adapted_policy_vars = self.compute_updated_variables(surr_loss, current_policy_vars[i])
-                pi_new_logits[i] = self.feed_forward(obs[step+1][i], adapted_policy_vars)
+                pi_new_logits[i] = self.feed_forward(obs[step+1][i], adapted_policy_vars, policy_config=config["model"])
                 current_policy_vars[i] = adapted_policy_vars
 
         surr_obj = []
@@ -166,45 +183,37 @@ class MAMLLoss(object):
 
         self.loss = tf.reduce_mean(tf.stack(surr_obj, axis=0))
 
-    def feed_forward(self, obs, policy_vars, policy_config = None):
-        # Hacky for now, assumes it is Fully connected network in models/fcnet.py
-        # Returns pi_new_logits and value_function_prediction
-        x = obs
-        idx = 0
-        bias_added = False
+    def PPOLoss(self,
+         actions,
+         curr_logits,
+         behaviour_logits,
+         advantages,
+         value_fn,
+         value_targets,
+         vf_preds,
+         cur_kl_coeff,
+         valid_mask,
+         entropy_coeff,
+         clip_param,
+         vf_clip_param,
+         vf_loss_coeff):
+        def reduce_mean_valid(t, valid_mask):
+            return tf.reduce_mean(tf.boolean_mask(t, valid_mask))
 
-        output_nonlinearity = tf.identity
-        hidden_nonlinearity = tf.tanh
+        pi_new_dist = self.dist_class(curr_logits)
+        pi_old_dist = self.dist_class(behaviour_logits)
 
-        for name, param in policy_vars.items():
-            if 'value_function' in name: 
-                break
-            if "kernel" in name:
-                x = tf.matmul(x, param)
-            elif "bias" in name:
-                x = tf.add(x, param)
-                bias_added = True
-            else:
-                raise NameError
+        surr_loss = reduce_mean_valid(self.surrogate_loss(actions, pi_new_dist, pi_old_dist, advantages), valid_mask)
+        kl_loss = reduce_mean_valid(self.kl_loss(pi_new_dist, pi_old_dist), valid_mask)
+        vf_loss = reduce_mean_valid(self.vf_loss(value_fn, value_targets, vf_preds, vf_clip_param), valid_mask)
+        entropy_loss = reduce_mean_valid(self.entropy_loss(pi_new_dist), valid_mask)
 
-            if bias_added:
-                if "fc_out" not in name:
-                    x = hidden_nonlinearity(x)
-                elif "fc_out" in name:
-                    x = output_nonlinearity(x)
-                else:
-                    raise NameError
-                idx += 1
-                bias_added = False
-        pi_new_logits = x
-        return pi_new_logits, value_fn
+        total_loss = - surr_loss + cur_kl_coeff * kl_loss + vf_loss_coeff * vf_loss - entropy_coeff * entropy_loss
+        return total_loss, surr_loss, kl_loss, vf_loss, entropy_loss
 
-    def reduce_mean_valid(t, valid_mask):
-        return tf.reduce_mean(tf.boolean_mask(t, valid_mask))
-
-    def surrogate_loss(self, actions, pi_new_logits, pi_old_logits, advantages):
-        pi_new_logp = self.dist_class(pi_new_logits).logp(actions)
-        pi_old_logp = self.dist_class(pi_old_logits).logp(actions)
+    def surrogate_loss(self, actions, curr_dist, prev_dist, advantages):
+        pi_new_logp = curr_dist.logp(actions)
+        pi_old_logp = prev_dist.logp(actions)
 
         logp_ratio = tf.exp(pi_new_logp - pi_old_logp)
 
@@ -212,20 +221,72 @@ class MAMLLoss(object):
             advantages * logp_ratio,
             advantages * tf.clip_by_value(logp_ratio, 1 - self.clip_param,
                                           1 + self.clip_param))
-    def kl_loss(self, ):
+    
+    def kl_loss(self, curr_dist, prev_dist):
+        return prev_dist.kl(curr_dist)
 
+    def entropy_loss(self, dist):
+        return dist.entropy()
 
-    def value_loss(self, value_fn, value_targets, vf_preds, valid_mask, vf_clip_param=0.1):
+    def vf_loss(self, value_fn, value_targets, vf_preds, vf_clip_param=0.1):
         # GAE Value Function Loss
         vf_loss1 = tf.square(value_fn - value_targets)
         vf_clipped = vf_preds + tf.clip_by_value(
             value_fn - vf_preds, -vf_clip_param, vf_clip_param)
         vf_loss2 = tf.square(vf_clipped - value_targets)
         vf_loss = tf.maximum(vf_loss1, vf_loss2)
-        self.mean_vf_loss = reduce_mean_valid(vf_loss)
+        return vf_loss
 
-    def compute_updated_variables(self, loss):
-        return 0
+    def feed_forward(self, obs, policy_vars, policy_config = None):
+        # Hacky for now, assumes it is Fully connected network in models/fcnet.py
+        # Returns pi_new_logits and value_function_prediction
+        
+        def network(inp, network_vars, hidden_nonlinearity, output_nonlinearity):
+            x = inp
+            bias_added = False
+            for param in network_vars:
+                name = param.name
+                if "kernel" in name:
+                    x = tf.matmul(x, param)
+                elif "bias" in name:
+                    x = tf.add(x, param)
+                    bias_added = True
+                else:
+                    raise NameError
+
+                if bias_added:
+                    if "fc_out" not in name:
+                        x = hidden_nonlinearity(x)
+                    elif "fc_out" in name:
+                        x = output_nonlinearity(x)
+                    else:
+                        raise NameError
+                    bias_added = False
+            return x
+
+
+        policyn_vars = []
+        valuen_vars = []
+
+        for param in policy_vars:
+            if 'value_function' in param.name:
+                valuen_vars.append(param)
+            else:
+                policyn_vars.append(param)
+
+        output_nonlinearity = tf.identity
+        hidden_nonlinearity = get_activation_fn(policy_config["fcnet_activation"])
+        
+        pi_new_logits = network(obs, policyn_vars, hidden_nonlinearity, output_nonlinearity)
+        value_fn = network(obs, valuen_vars, hidden_nonlinearity, output_nonlinearity)
+
+        return pi_new_logits, tf.reshape(value_fn, [-1])
+
+    def compute_updated_variables(self, loss, network_vars):
+        grad = tf.gradients(loss, network_vars)
+
+        import pdb; pdb.set_trace()
+        return
 
     def split_placeholders(self, placeholder):
         inner_placeholder_list = tf.split(placeholder, self.inner_adaptation_steps+1, axis=0)
@@ -360,30 +421,27 @@ class MAMLTFPolicy(LearningRateSchedule, MAMLPostprocessing, TFPolicy):
         curr_action_dist = dist_cls(self.logits)
         self.sampler = curr_action_dist.sample()
         if self.config["use_gae"]:
-            if self.config["vf_share_layers"]:
-                self.value_function = self.model.value_function()
-            else:
-                vf_config = self.config["model"].copy()
-                # Do not split the last layer of the value function into
-                # mean parameters and standard deviation parameters and
-                # do not make the standard deviations free variables.
-                vf_config["free_log_std"] = False
-                if vf_config["use_lstm"]:
-                    vf_config["use_lstm"] = False
-                    logger.warning(
-                        "It is not recommended to use a LSTM model with "
-                        "vf_share_layers=False (consider setting it to True). "
-                        "If you want to not share layers, you can implement "
-                        "a custom LSTM model that overrides the "
-                        "value_function() method.")
-                with tf.variable_scope("value_function"):
-                    self.value_function = ModelCatalog.get_model({
-                        "obs": obs_ph,
-                        "prev_actions": prev_actions_ph,
-                        "prev_rewards": prev_rewards_ph,
-                        "is_training": self._get_is_training_placeholder(),
-                    }, observation_space, action_space, 1, vf_config).outputs
-                    self.value_function = tf.reshape(self.value_function, [-1])
+            vf_config = self.config["model"].copy()
+            # Do not split the last layer of the value function into
+            # mean parameters and standard deviation parameters and
+            # do not make the standard deviations free variables.
+            vf_config["free_log_std"] = False
+            if vf_config["use_lstm"]:
+                vf_config["use_lstm"] = False
+                logger.warning(
+                    "It is not recommended to use a LSTM model with "
+                    "vf_share_layers=False (consider setting it to True). "
+                    "If you want to not share layers, you can implement "
+                    "a custom LSTM model that overrides the "
+                    "value_function() method.")
+            with tf.variable_scope("value_function"):
+                self.value_function = ModelCatalog.get_model({
+                    "obs": obs_ph,
+                    "prev_actions": prev_actions_ph,
+                    "prev_rewards": prev_rewards_ph,
+                    "is_training": self._get_is_training_placeholder(),
+                }, observation_space, action_space, 1, vf_config).outputs
+                self.value_function = tf.reshape(self.value_function, [-1])
         else:
             self.value_function = tf.zeros(shape=tf.shape(obs_ph)[:1])
 
@@ -429,10 +487,10 @@ class MAMLTFPolicy(LearningRateSchedule, MAMLPostprocessing, TFPolicy):
                 obs = obs_ph,  
                 num_tasks = self.config["num_workers"],
                 inner_adaptation_steps=1,
-                entropy_coeff=0,
-                clip_param=0.3,
-                vf_clip_param=0.1,
-                vf_loss_coeff=1.0
+                entropy_coeff=self.config["entropy_coeff"],
+                clip_param=self.config["clip_param"],
+                vf_clip_param=self.config["vf_clip_param"],
+                vf_loss_coeff=self.config["vf_loss_coeff"]
                 )
 
         LearningRateSchedule.__init__(self, self.config["lr"],
