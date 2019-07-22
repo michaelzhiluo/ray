@@ -28,6 +28,7 @@ tf = try_import_tf()
 
 # Frozen logits of the policy that computed the action
 BEHAVIOUR_LOGITS = "behaviour_logits"
+INNER_LR = 0.0001
 
 
 class PPOLoss(object):
@@ -76,7 +77,7 @@ class PPOLoss(object):
 
         def reduce_mean_valid(t):
             return tf.reduce_mean(tf.boolean_mask(t, valid_mask))
-
+        print("PPO LOSS")
         dist_cls, _ = ModelCatalog.get_action_dist(action_space, {})
         prev_dist = dist_cls(logits)
         # Make loss functions.
@@ -143,13 +144,18 @@ class MAMLLoss(object):
         self.vf_preds = self.split_placeholders(vf_preds)
         self.valid_mask = self.split_placeholders(valid_mask)
 
+        #  Construct name to tensor dictionary
+        self.policy_vars = {}
+        for var in policy_vars:
+            self.policy_vars[var.name] = var
+
         # Calculate pi_new for PPO
         pi_new_logits, current_policy_vars, value_fns = [], [], []
         for i in range(self.num_tasks):
-            pi_new, value_fn = self.feed_forward(self.obs[0][i], policy_vars, policy_config = config["model"])
+            pi_new, value_fn = self.feed_forward(self.obs[0][i], self.policy_vars, policy_config = config["model"])
             pi_new_logits.append(pi_new)
             value_fns.append(value_fn)
-            current_policy_vars.append(policy_vars)
+            current_policy_vars.append(self.policy_vars)
 
         inner_kls = []
         # Recompute weights for inner-adaptation (since this is also incoporated in meta objective loss function)
@@ -172,16 +178,33 @@ class MAMLLoss(object):
                     vf_loss_coeff
                     )
 
-                adapted_policy_vars = self.compute_updated_variables(surr_loss, current_policy_vars[i])
-                pi_new_logits[i] = self.feed_forward(obs[step+1][i], adapted_policy_vars, policy_config=config["model"])
+                adapted_policy_vars = self.compute_updated_variables(ppo_loss, current_policy_vars[i])
+                pi_new_logits[i], value_fns[i] = self.feed_forward(self.obs[step+1][i], adapted_policy_vars, policy_config=config["model"])
                 current_policy_vars[i] = adapted_policy_vars
+                inner_kls.append(kl_loss)
 
-        surr_obj = []
+        mean_inner_kl = tf.reduce_mean(tf.stack(inner_kls, axis=0))
+
+        ppo_obj = []
         for i in range(self.num_tasks):
-            surr_obj.append(self.surrogate_loss(self.actions[self.inner_adaptation_steps][i], pi_new_logits[i], 
-                self.behaviour_logits[self.inner_adaptation_steps][i], self.advantages[self.inner_adaptation_steps][i]))
+            ppo_loss, _, kl_loss, _, _ = self.PPOLoss(
+                    self.actions[self.inner_adaptation_steps][i],
+                    pi_new_logits[i],
+                    self.behaviour_logits[self.inner_adaptation_steps][i],
+                    self.advantages[self.inner_adaptation_steps][i],
+                    value_fns[i],
+                    self.value_targets[self.inner_adaptation_steps][i],
+                    self.vf_preds[self.inner_adaptation_steps][i],
+                    cur_kl_coeff,
+                    self.valid_mask[self.inner_adaptation_steps][i],
+                    entropy_coeff,
+                    clip_param,
+                    vf_clip_param,
+                    vf_loss_coeff
+                    )
+            ppo_obj.append(ppo_loss)
 
-        self.loss = tf.reduce_mean(tf.stack(surr_obj, axis=0))
+        self.loss = tf.reduce_mean(tf.stack(ppo_obj, axis=0)) + mean_inner_kl
 
     def PPOLoss(self,
          actions,
@@ -238,14 +261,13 @@ class MAMLLoss(object):
         return vf_loss
 
     def feed_forward(self, obs, policy_vars, policy_config = None):
-        # Hacky for now, assumes it is Fully connected network in models/fcnet.py
+        # Hacky for now, assumes it is Fully connected network in models/fcnet.py, Conv net implemented on a later date
         # Returns pi_new_logits and value_function_prediction
         
-        def network(inp, network_vars, hidden_nonlinearity, output_nonlinearity):
+        def fc_network(inp, network_vars, hidden_nonlinearity, output_nonlinearity):
             x = inp
             bias_added = False
-            for param in network_vars:
-                name = param.name
+            for name, param in network_vars.items():
                 if "kernel" in name:
                     x = tf.matmul(x, param)
                 elif "bias" in name:
@@ -265,28 +287,31 @@ class MAMLLoss(object):
             return x
 
 
-        policyn_vars = []
-        valuen_vars = []
+        policyn_vars = {}
+        valuen_vars = {}
 
-        for param in policy_vars:
-            if 'value_function' in param.name:
-                valuen_vars.append(param)
+        for name, param in policy_vars.items():
+            if 'value_function' in name:
+                valuen_vars[name] = param
             else:
-                policyn_vars.append(param)
+                policyn_vars[name] = param
 
         output_nonlinearity = tf.identity
         hidden_nonlinearity = get_activation_fn(policy_config["fcnet_activation"])
         
-        pi_new_logits = network(obs, policyn_vars, hidden_nonlinearity, output_nonlinearity)
-        value_fn = network(obs, valuen_vars, hidden_nonlinearity, output_nonlinearity)
+        pi_new_logits = fc_network(obs, policyn_vars, hidden_nonlinearity, output_nonlinearity)
+        value_fn = fc_network(obs, valuen_vars, hidden_nonlinearity, output_nonlinearity)
 
         return pi_new_logits, tf.reshape(value_fn, [-1])
 
     def compute_updated_variables(self, loss, network_vars):
-        grad = tf.gradients(loss, network_vars)
-
-        import pdb; pdb.set_trace()
-        return
+        grad = tf.gradients(loss, list(network_vars.values()))
+        adapted_vars = {}
+        counter =0
+        for i, tup in enumerate(network_vars.items()):
+            name, var = tup
+            adapted_vars[name] = var - INNER_LR*grad[i]
+        return adapted_vars
 
     def split_placeholders(self, placeholder):
         inner_placeholder_list = tf.split(placeholder, self.inner_adaptation_steps+1, axis=0)
@@ -520,11 +545,11 @@ class MAMLTFPolicy(LearningRateSchedule, MAMLPostprocessing, TFPolicy):
             "cur_kl_coeff": self.kl_coeff,
             "cur_lr": tf.cast(self.cur_lr, tf.float64),
             "total_loss": self.loss_obj.loss,
-            "policy_loss": self.loss_obj.mean_policy_loss,
-            "vf_loss": self.loss_obj.mean_vf_loss,
-            "vf_explained_var": self.explained_variance,
-            "kl": self.loss_obj.mean_kl,
-            "entropy": self.loss_obj.mean_entropy
+            #"policy_loss": self.loss_obj.mean_policy_loss,
+            #"vf_loss": self.loss_obj.mean_vf_loss,
+            #"vf_explained_var": self.explained_variance,
+            #"kl": self.loss_obj.mean_kl,
+            #"entropy": self.loss_obj.mean_entropy
         }
 
     @override(TFPolicy)

@@ -64,9 +64,6 @@ class MAMLOptimizer(PolicyOptimizer):
                 samples = ray_get_and_free([e.sample.remote() for e in self.workers.remote_workers()])
                 all_samples = all_samples.concat(SampleBatch.concat_samples(samples))
 
-        import pdb; pdb.set_trace()
-        
-
         # Meta gradient Update
         # All Samples should be a list of list of dicts where the dims are (inner_adaptation_steps+1,num_workers,SamplesDict)
         # Should the whole computation graph be in master?
