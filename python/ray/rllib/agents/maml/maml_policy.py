@@ -28,7 +28,7 @@ tf = try_import_tf()
 
 # Frozen logits of the policy that computed the action
 BEHAVIOUR_LOGITS = "behaviour_logits"
-INNER_LR = 0.0001
+INNER_LR = 0.0003
 
 
 class PPOLoss(object):
@@ -205,6 +205,7 @@ class MAMLLoss(object):
             ppo_obj.append(ppo_loss)
 
         self.loss = tf.reduce_mean(tf.stack(ppo_obj, axis=0)) + mean_inner_kl
+        self.loss = tf.Print(self.loss, [self.loss])
 
     def PPOLoss(self,
          actions,

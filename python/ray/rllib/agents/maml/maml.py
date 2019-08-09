@@ -3,7 +3,7 @@ from __future__ import division
 from __future__ import print_function
 
 import logging 
-
+import ray
 from ray.rllib.agents.maml.maml_policy import MAMLTFPolicy
 from ray.rllib.agents.trainer import Trainer, with_common_config
 from ray.rllib.agents.trainer_template import build_trainer
@@ -80,6 +80,8 @@ class MAMLTrainer(Trainer):
 
     @override(Trainer)
     def _train(self):
+        weights = ray.put(self.workers.local_worker().get_weights())
+
         if "observation_filter" not in self.raw_user_config:
             # TODO(ekl) remove this message after a few releases
             logger.info(
@@ -94,21 +96,35 @@ class MAMLTrainer(Trainer):
             # single-agent
             self.workers.local_worker().for_policy(
                 lambda pi: pi.update_kl(fetches["kl"]))
-        else:
 
-            def update(pi, pi_id):
-                if pi_id in fetches:
-                    pi.update_kl(fetches[pi_id]["kl"])
-                else:
-                    logger.debug(
-                        "No data for {}, not updating kl".format(pi_id))
+        print(self.workers.remote_workers())
+        half_index = int(len(self.workers.remote_workers())/2)
+        first_half  = self.workers.remote_workers()[:half_index]
+        second_half = self.workers.remote_workers()[half_index:]
+        for e in first_half:
+            e.set_weights.remote(weights)
 
-            # multi-agent
-            self.workers.local_worker().foreach_trainable_policy(update)
-        res = self.collect_metrics()
+        # Pre adaptation metrics
+        res = self.optimizer.collect_metrics_pre(
+            self.config["collect_metrics_timeout"],
+            min_history=self.config["metrics_smoothing_episodes"],
+            selected_workers=first_half)
         res.update(
             timesteps_this_iter=self.optimizer.num_steps_sampled - prev_steps,
             info=res.get("info", {}))
+        print("Pre adaption stats", res)
+
+        # Post adaptation metrics
+        res1 = self.optimizer.collect_metrics_post(
+            self.config["collect_metrics_timeout"],
+            min_history=self.config["metrics_smoothing_episodes"],
+            selected_workers=second_half)
+        res1.update(
+            timesteps_this_iter=self.optimizer.num_steps_sampled - prev_steps,
+            info=res.get("info", {}))
+        print("Post adaptation stats", res1)
+
+
 
         # Warn about bad clipping configs
         if self.config["vf_clip_param"] <= 0:
