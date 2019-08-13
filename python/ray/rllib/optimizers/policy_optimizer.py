@@ -135,7 +135,7 @@ class PolicyOptimizer(object):
                 `info` replaced with stats from self.
         """
         episodes, num_dropped = collect_episodes(
-            self.workers.local_worker(),
+            None,
             selected_workers,
             timeout_seconds=timeout_seconds)
         #print(episodes, num_dropped)
@@ -170,7 +170,7 @@ class PolicyOptimizer(object):
         """
         episodes, num_dropped = collect_episodes(
             None,
-            selected_workers or self.workers.remote_workers(),
+            selected_workers,
             timeout_seconds=timeout_seconds)
         #print(episodes, num_dropped)
         orig_episodes = list(episodes)

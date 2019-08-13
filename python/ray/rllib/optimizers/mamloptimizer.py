@@ -15,10 +15,14 @@ from ray.rllib.utils.memory import ray_get_and_free
 logger = logging.getLogger(__name__)
 
 class MAMLOptimizer(PolicyOptimizer):
-    """ MAML Optimizer
-
-    Each worker represents a different task (num_workers = num_tasks)
-    Environments can be vectorized within each worker
+    """ MAML Optimizer: Workers are different tasks while 
+    Every time MAML Optimizer steps...
+    1) Workers are set to the same weights as master...
+    2) Tasks are randomly sampled and assigned to each worker...
+    3) Inner Adaptation Steps
+        -Workers collect their own data, update themselves, and collect more data...
+        -All data from all workers from all steps gets aggregated to all_samples
+    4) Using the aggregated data, update the meta-objective
     """
 
     def __init__(self, workers, inner_adaptation_steps=1, train_batch_size=1):
@@ -59,7 +63,7 @@ class MAMLOptimizer(PolicyOptimizer):
             for step in range(self.inner_adaptation_steps):
                 # Inner Adaptation Gradient Steps
                 for i, e in enumerate(self.workers.remote_workers()):
-                    e.learn_on_batch.remote(ray.put(samples[i]))
+                    e.learn_on_batch.remote(samples[i])
                 # Post Adaptation Sampling from Workers
                 samples = ray_get_and_free([e.sample.remote() for e in self.workers.remote_workers()])
                 all_samples = all_samples.concat(SampleBatch.concat_samples(samples))

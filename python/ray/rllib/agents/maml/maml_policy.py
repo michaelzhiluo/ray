@@ -129,6 +129,7 @@ class MAMLLoss(object):
             vf_clip_param=0.1,
             vf_loss_coeff=1.0):
 
+        print("MAML Loss")
         self.num_tasks = num_tasks
         self.inner_adaptation_steps = inner_adaptation_steps
         self.clip_param = clip_param
@@ -221,6 +222,7 @@ class MAMLLoss(object):
          clip_param,
          vf_clip_param,
          vf_loss_coeff):
+    
         def reduce_mean_valid(t, valid_mask):
             return tf.reduce_mean(tf.boolean_mask(t, valid_mask))
 
@@ -286,7 +288,6 @@ class MAMLLoss(object):
                         raise NameError
                     bias_added = False
             return x
-
 
         policyn_vars = {}
         valuen_vars = {}

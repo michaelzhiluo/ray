@@ -1,6 +1,6 @@
 halfcheetah-ppo:
-    env: HalfCheetahRandDirec-v2 #HalfCheetah-v2 #HalfCheetahRandDirec-v2
-    run: MAML
+    env: HalfCheetah-v2
+    run: PPO
     stop:
         episode_reward_mean: 9800
         time_total_s: 10800           

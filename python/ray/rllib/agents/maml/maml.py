@@ -58,6 +58,8 @@ DEFAULT_CONFIG = with_common_config({
     # (Deprecated) Use the sampling behavior as of 0.6, which launches extra
     # sampling tasks for performance but can waste a large portion of samples.
     "straggler_mitigation": False,
+
+    "inner_adaptation_steps": 1,
 })
 # __sphinx_doc_end__
 # yapf: enable
@@ -75,7 +77,7 @@ class MAMLTrainer(Trainer):
             env_creator, self._policy_graph, config, config["num_workers"])
         self.optimizer = MAMLOptimizer(
             self.workers,
-            #num_sgd_iter=config["num_sgd_iter"],
+            inner_adaptation_steps=config["inner_adaptation_steps"],
             train_batch_size=config["train_batch_size"])
 
     @override(Trainer)
@@ -97,7 +99,7 @@ class MAMLTrainer(Trainer):
             self.workers.local_worker().for_policy(
                 lambda pi: pi.update_kl(fetches["kl"]))
 
-        print(self.workers.remote_workers())
+        # Half of the workers collect data for pre-adaptation metrics, other half collect data for post-adaptation metrics
         half_index = int(len(self.workers.remote_workers())/2)
         first_half  = self.workers.remote_workers()[:half_index]
         second_half = self.workers.remote_workers()[half_index:]
