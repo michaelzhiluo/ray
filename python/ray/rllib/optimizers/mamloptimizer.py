@@ -39,6 +39,7 @@ class MAMLOptimizer(PolicyOptimizer):
 
     @override(PolicyOptimizer)
     def step(self):
+        # Moved this step to _train() in agents/maml/maml.py
         # Initialize Workers to have the same weights
         with self.update_weights_timer:
             if self.workers.remote_workers():

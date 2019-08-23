@@ -138,7 +138,6 @@ class PolicyOptimizer(object):
             None,
             selected_workers,
             timeout_seconds=timeout_seconds)
-        #print(episodes, num_dropped)
         orig_episodes = list(episodes)
         missing = min_history - len(episodes)
         if missing > 0:

@@ -80,6 +80,17 @@ class MAMLTrainer(Trainer):
             inner_adaptation_steps=config["inner_adaptation_steps"],
             train_batch_size=config["train_batch_size"])
 
+    def update_pre_post_stats(self, pre_res, post_res):
+        pre_reward_max = pre_res['episode_reward_max']
+        pre_reward_mean = pre_res['episode_reward_mean']
+        pre_reward_min = pre_res['episode_reward_min']
+
+        pre_res['episode_reward_max(post)'] = post_res['episode_reward_max']
+        pre_res['episode_reward_mean(post)'] = post_res['episode_reward_mean']
+        pre_res['episode_reward_min(post)'] = post_res['episode_reward_min']
+
+        return pre_res
+
     @override(Trainer)
     def _train(self):
         weights = ray.put(self.workers.local_worker().get_weights())
@@ -121,13 +132,10 @@ class MAMLTrainer(Trainer):
             self.config["collect_metrics_timeout"],
             min_history=self.config["metrics_smoothing_episodes"],
             selected_workers=second_half)
-        res1.update(
-            timesteps_this_iter=self.optimizer.num_steps_sampled - prev_steps,
-            info=res.get("info", {}))
         print("Post adaptation stats", res1)
 
-
-
+        res = self.update_pre_post_stats(res, res1)
+        
         # Warn about bad clipping configs
         if self.config["vf_clip_param"] <= 0:
             rew_scale = float("inf")
@@ -145,6 +153,7 @@ class MAMLTrainer(Trainer):
                 "{} iterations for your value ".format(rew_scale) +
                 "function to converge. If this is not intended, consider "
                 "increasing `vf_clip_param`.")
+        #import pdb; pdb.set_trace()
         return res
 
     def _validate_config(self):
