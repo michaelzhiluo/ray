@@ -60,6 +60,8 @@ DEFAULT_CONFIG = with_common_config({
     "straggler_mitigation": False,
 
     "inner_adaptation_steps": 1,
+
+    "maml_optimizer_steps": 5,
 })
 # __sphinx_doc_end__
 # yapf: enable
@@ -78,7 +80,8 @@ class MAMLTrainer(Trainer):
         self.optimizer = MAMLOptimizer(
             self.workers,
             inner_adaptation_steps=config["inner_adaptation_steps"],
-            train_batch_size=config["train_batch_size"])
+            train_batch_size=config["train_batch_size"],
+            maml_optimizer_steps=config["maml_optimizer_steps"])
 
     def update_pre_post_stats(self, pre_res, post_res):
         pre_reward_max = pre_res['episode_reward_max']

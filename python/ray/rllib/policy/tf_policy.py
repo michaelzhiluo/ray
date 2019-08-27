@@ -526,7 +526,8 @@ class LearningRateSchedule(object):
     """Mixin for TFPolicy that adds a learning rate schedule."""
 
     @DeveloperAPI
-    def __init__(self, lr, lr_schedule):
+    def __init__(self, lr, lr_schedule, worker_index=0):
+        self.worker_index = worker_index
         self.cur_lr = tf.get_variable("lr", initializer=lr)
         if lr_schedule is None:
             self.lr_schedule = ConstantSchedule(lr)
@@ -543,4 +544,7 @@ class LearningRateSchedule(object):
 
     @override(TFPolicy)
     def optimizer(self):
-        return tf.train.AdamOptimizer(self.cur_lr)
+        if self.worker_index:
+            return tf.train.AdamOptimizer(self.cur_lr) #tf.train.GradientDescentOptimizer(self.cur_lr)
+        else:
+            return tf.train.AdamOptimizer(self.cur_lr)

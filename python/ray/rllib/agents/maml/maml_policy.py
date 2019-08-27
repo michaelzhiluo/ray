@@ -28,7 +28,7 @@ tf = try_import_tf()
 
 # Frozen logits of the policy that computed the action
 BEHAVIOUR_LOGITS = "behaviour_logits"
-INNER_LR = 0.0003
+INNER_LR = 0.1
 
 
 class PPOLoss(object):
@@ -103,9 +103,9 @@ class PPOLoss(object):
         vf_loss = tf.maximum(vf_loss1, vf_loss2)
         self.mean_vf_loss = reduce_mean_valid(vf_loss)
         loss = reduce_mean_valid(
-            -surrogate_loss + cur_kl_coeff * action_kl +
+            -surrogate_loss + 0 * action_kl +
             vf_loss_coeff * vf_loss - entropy_coeff * curr_entropy)
-
+        loss = tf.Print(loss, ["Worker Loss", loss])
         self.loss = loss
 
 class MAMLLoss(object):
@@ -144,7 +144,7 @@ class MAMLLoss(object):
         self.value_targets = self.split_placeholders(value_targets)
         self.vf_preds = self.split_placeholders(vf_preds)
         self.valid_mask = self.split_placeholders(valid_mask)
-
+        #import pdb; pdb.set_trace()
         #  Construct name to tensor dictionary
         self.policy_vars = {}
         for var in policy_vars:
@@ -205,7 +205,7 @@ class MAMLLoss(object):
                     )
             ppo_obj.append(ppo_loss)
 
-        self.loss = tf.reduce_mean(tf.stack(ppo_obj, axis=0)) + mean_inner_kl
+        self.loss = tf.reduce_mean(tf.stack(ppo_obj, axis=0)) + 0.0005*mean_inner_kl
         self.loss = tf.Print(self.loss, [self.loss])
 
     def PPOLoss(self,
@@ -234,7 +234,8 @@ class MAMLLoss(object):
         vf_loss = reduce_mean_valid(self.vf_loss(value_fn, value_targets, vf_preds, vf_clip_param), valid_mask)
         entropy_loss = reduce_mean_valid(self.entropy_loss(pi_new_dist), valid_mask)
 
-        total_loss = - surr_loss + cur_kl_coeff * kl_loss + vf_loss_coeff * vf_loss - entropy_coeff * entropy_loss
+        total_loss = - surr_loss + 0 * kl_loss + vf_loss_coeff * vf_loss - entropy_coeff * entropy_loss
+        print(surr_loss, kl_loss, vf_loss, entropy_loss)
         return total_loss, surr_loss, kl_loss, vf_loss, entropy_loss
 
     def surrogate_loss(self, actions, curr_dist, prev_dist, advantages):
@@ -374,7 +375,6 @@ class MAMLTFPolicy(LearningRateSchedule, MAMLPostprocessing, TFPolicy):
                 placeholders upon which the graph should be built upon.
         """
         config = dict(ray.rllib.agents.maml.maml.DEFAULT_CONFIG, **config)
-        print(config)
         self.sess = tf.get_default_session()
         self.action_space = action_space
         self.config = config
@@ -520,8 +520,11 @@ class MAMLTFPolicy(LearningRateSchedule, MAMLPostprocessing, TFPolicy):
                 vf_loss_coeff=self.config["vf_loss_coeff"]
                 )
 
-        LearningRateSchedule.__init__(self, self.config["lr"],
-                                      self.config["lr_schedule"])
+        if self.config["worker_index"]:
+            LearningRateSchedule.__init__(self, INNER_LR, self.config["lr_schedule"], self.config["worker_index"])
+        else:
+            LearningRateSchedule.__init__(self, self.config["lr"],
+                                          self.config["lr_schedule"], self.config["worker_index"])
         TFPolicy.__init__(
             self,
             observation_space,
@@ -539,6 +542,7 @@ class MAMLTFPolicy(LearningRateSchedule, MAMLPostprocessing, TFPolicy):
             prev_reward_input=prev_rewards_ph,
             seq_lens=self.model.seq_lens,
             max_seq_len=config["model"]["max_seq_len"])
+
 
         self.sess.run(tf.global_variables_initializer())
         self.explained_variance = explained_variance(value_targets_ph,

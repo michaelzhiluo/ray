@@ -25,7 +25,7 @@ class MAMLOptimizer(PolicyOptimizer):
     4) Using the aggregated data, update the meta-objective
     """
 
-    def __init__(self, workers, inner_adaptation_steps=1, train_batch_size=1):
+    def __init__(self, workers, inner_adaptation_steps=1, train_batch_size=1, maml_optimizer_steps=5):
         PolicyOptimizer.__init__(self, workers)
         # Each worker represents a different task
         self.num_tasks = len(self.workers.remote_workers())
@@ -36,6 +36,7 @@ class MAMLOptimizer(PolicyOptimizer):
         self.inner_adaptation_steps = inner_adaptation_steps
         self.train_batch_size = train_batch_size
         self.learner_stats = {}
+        self.maml_optimizer_steps = maml_optimizer_steps
 
     @override(PolicyOptimizer)
     def step(self):
@@ -69,12 +70,16 @@ class MAMLOptimizer(PolicyOptimizer):
                 samples = ray_get_and_free([e.sample.remote() for e in self.workers.remote_workers()])
                 all_samples = all_samples.concat(SampleBatch.concat_samples(samples))
 
+        #import pdb; pdb.set_trace()
         # Meta gradient Update
         # All Samples should be a list of list of dicts where the dims are (inner_adaptation_steps+1,num_workers,SamplesDict)
         # Should the whole computation graph be in master?
+
+        print(all_samples["obs"][3], all_samples["obs"][25603])
         with self.meta_grad_timer:
-            fetches = self.workers.local_worker().learn_on_batch(all_samples)
-            #self.learner_stats = get_learner_stats(fetches)
+            for i in range(self.maml_optimizer_steps):
+                fetches = self.workers.local_worker().learn_on_batch(all_samples)
+            self.learner_stats = get_learner_stats(fetches)
 
         self.num_steps_sampled += all_samples.count
         self.num_steps_trained += all_samples.count

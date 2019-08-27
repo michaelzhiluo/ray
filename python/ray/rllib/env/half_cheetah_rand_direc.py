@@ -11,6 +11,7 @@ class HalfCheetahRandDirecEnv(MujocoEnv, gym.utils.EzPickle):
 
     def sample_tasks(self, n_tasks):
         # for fwd/bwd env, goal direc is backwards if - 1.0, forwards if + 1.0
+        #return np.array([1.0 for i in range(n_tasks)])
         return np.random.choice((-1.0, 1.0), (n_tasks, ))
 
     def set_task(self, task):
@@ -45,6 +46,7 @@ class HalfCheetahRandDirecEnv(MujocoEnv, gym.utils.EzPickle):
         ])
 
     def reset_model(self):
+        #self.seed(9000)
         qpos = self.init_qpos + self.np_random.uniform(low=-.1, high=.1, size=self.model.nq)
         qvel = self.init_qvel + self.np_random.randn(self.model.nv) * .1
         self.set_state(qpos, qvel)
