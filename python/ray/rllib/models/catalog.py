@@ -38,7 +38,7 @@ MODEL_DEFAULTS = {
     # Nonlinearity for fully connected net (tanh, relu)
     "fcnet_activation": "tanh",
     # Number of hidden layers for fully connected net
-    "fcnet_hiddens": [256, 256],
+    "fcnet_hiddens": [64, 64],
     # For control envs, documented in ray.rllib.models.Model
     "free_log_std": False,
     # (deprecated) Whether to use sigmoid to squash actions to space range

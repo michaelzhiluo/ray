@@ -9,12 +9,13 @@ halfcheetah-maml:
         lr: .001
         vf_loss_coeff: 0.5
         clip_param: 0.3
-        sgd_minibatch_size: 512
-        train_batch_size: 65536
+        sample_batch_size: 100
+        num_envs_per_worker: 20
         kl_coeff: 0.0005
         num_workers: 4
         num_gpus: 1
         grad_clip: 0.5
         num_envs_per_worker: 32
-        batch_mode: truncate_episodes
+        horizon: 100
+        batch_mode: complete_episodes
         observation_filter: MeanStdFilter                                         

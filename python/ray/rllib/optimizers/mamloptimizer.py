@@ -75,7 +75,6 @@ class MAMLOptimizer(PolicyOptimizer):
         # All Samples should be a list of list of dicts where the dims are (inner_adaptation_steps+1,num_workers,SamplesDict)
         # Should the whole computation graph be in master?
 
-        print(all_samples["obs"][3], all_samples["obs"][25603])
         with self.meta_grad_timer:
             for i in range(self.maml_optimizer_steps):
                 fetches = self.workers.local_worker().learn_on_batch(all_samples)

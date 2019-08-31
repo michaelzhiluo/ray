@@ -545,6 +545,6 @@ class LearningRateSchedule(object):
     @override(TFPolicy)
     def optimizer(self):
         if self.worker_index:
-            return tf.train.AdamOptimizer(self.cur_lr) #tf.train.GradientDescentOptimizer(self.cur_lr)
+            return tf.train.GradientDescentOptimizer(self.cur_lr)
         else:
             return tf.train.AdamOptimizer(self.cur_lr)

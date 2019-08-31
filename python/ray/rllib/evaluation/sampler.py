@@ -100,6 +100,7 @@ class SyncSampler(SamplerInput):
         while True:
             item = next(self.rollout_provider)
             if isinstance(item, RolloutMetrics):
+                print(item)
                 self.metrics_queue.put(item)
             else:
                 return item

@@ -244,6 +244,7 @@ class RolloutWorker(EvaluatorInterface):
                 "to prevent it from being evaluated as an expression.")
         self.env_creator = env_creator
         self.sample_batch_size = batch_steps * num_envs
+        print(batch_steps, num_envs, self.sample_batch_size)
         self.batch_mode = batch_mode
         self.compress_observations = compress_observations
         self.preprocessing_enabled = True

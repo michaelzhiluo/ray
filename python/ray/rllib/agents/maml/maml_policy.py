@@ -235,7 +235,6 @@ class MAMLLoss(object):
         entropy_loss = reduce_mean_valid(self.entropy_loss(pi_new_dist), valid_mask)
 
         total_loss = - surr_loss + 0 * kl_loss + vf_loss_coeff * vf_loss - entropy_coeff * entropy_loss
-        print(surr_loss, kl_loss, vf_loss, entropy_loss)
         return total_loss, surr_loss, kl_loss, vf_loss, entropy_loss
 
     def surrogate_loss(self, actions, curr_dist, prev_dist, advantages):
