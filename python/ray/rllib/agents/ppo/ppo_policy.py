@@ -214,6 +214,7 @@ class KLCoeffMixin(object):
             dtype=tf.float32)
 
     def update_kl(self, sampled_kl):
+        print("KL KLKLKLKLKLKKLKLKL")
         if sampled_kl > 2.0 * self.kl_target:
             self.kl_coeff_val *= 1.5
         elif sampled_kl < 0.5 * self.kl_target:

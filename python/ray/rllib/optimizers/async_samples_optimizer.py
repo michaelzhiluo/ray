@@ -45,7 +45,8 @@ class AsyncSamplesOptimizer(PolicyOptimizer):
                  use_kl_loss = False,
                  learner_queue_size=16,
                  num_aggregation_workers=0,
-                 _fake_gpus=False):
+                 _fake_gpus=False,
+                 old_policy_lag=512):
         PolicyOptimizer.__init__(self, workers)
 
         self._stats_start_time = time.time()
@@ -81,7 +82,7 @@ class AsyncSamplesOptimizer(PolicyOptimizer):
                 old_worker.set_weights(weights)
             self.learner = LearnerThread(self.workers.local_worker(),
                                          minibatch_buffer_size, num_sgd_iter,
-                                         learner_queue_size, old_worker=old_worker, use_kl_loss=use_kl_loss)
+                                         learner_queue_size, old_worker=old_worker, use_kl_loss=use_kl_loss, old_policy_lag=old_policy_lag)
         self.learner.start()
 
         # Stats

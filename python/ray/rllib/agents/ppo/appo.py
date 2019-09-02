@@ -54,6 +54,7 @@ DEFAULT_CONFIG = with_base_config(impala.DEFAULT_CONFIG, {
     "vf_loss_coeff": 0.5,
     "entropy_coeff": 0.01,
     "entropy_coeff_schedule": None,
+    "old_policy_lag": 1,
 })
 # __sphinx_doc_end__
 # yapf: enable
@@ -73,6 +74,7 @@ def make_aggregators_and_optimizer(workers, config):
         workers,
         old_worker=old_worker,
         lr=config["lr"],
+        use_kl_loss=config["use_kl_loss"],
         num_envs_per_worker=config["num_envs_per_worker"],
         num_gpus=config["num_gpus"],
         sample_batch_size=config["sample_batch_size"],
@@ -86,7 +88,8 @@ def make_aggregators_and_optimizer(workers, config):
         num_sgd_iter=config["num_sgd_iter"],
         minibatch_buffer_size=config["minibatch_buffer_size"],
         num_aggregation_workers=config["num_aggregation_workers"],
-        **config["optimizer"])
+        **config["optimizer"],
+        old_policy_lag=config["old_policy_lag"])
 
     if aggregators:
         # Assign the pre-created aggregators to the optimizer

@@ -26,7 +26,7 @@ class LearnerThread(threading.Thread):
     """
 
     def __init__(self, local_worker, minibatch_buffer_size, num_sgd_iter,
-                 learner_queue_size, old_worker=None, use_kl_loss=False):
+                 learner_queue_size, old_worker=None, use_kl_loss=False, old_policy_lag=512):
         threading.Thread.__init__(self)
         self.learner_queue_size = WindowStat("size", 50)
         self.local_worker = local_worker
@@ -38,9 +38,10 @@ class LearnerThread(threading.Thread):
         if self.old_worker:
             self.use_kl_loss = use_kl_loss
             self.minibatch_counter = 0
+            self.old_worker_lag = old_policy_lag
             self.old_worker_lag = minibatch_buffer_size*num_sgd_iter
             self.kls = []
-
+        self.minibatch_buffer_size = minibatch_buffer_size
         self.queue_timer = TimerStat()
         self.grad_timer = TimerStat()
         self.load_timer = TimerStat()
@@ -81,6 +82,7 @@ class LearnerThread(threading.Thread):
 
             if self.minibatch_counter == self.old_worker_lag:
                 if self.use_kl_loss:
+                    print(self.kls)
                     avg_kl = sum(self.kls)/len(self.kls)
                     self.local_worker.for_policy(
                         lambda pi: pi.update_kl(avg_kl))

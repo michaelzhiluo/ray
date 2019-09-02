@@ -21,6 +21,7 @@ from ray.rllib.utils import try_import_tf
 from ray.rllib.policy.tf_policy_template import build_tf_policy
 from ray.rllib.policy.tf_policy import LearningRateSchedule
 from ray.rllib.agents.ppo.ppo_policy import KLCoeffMixin
+from ray.rllib.utils.explained_variance import explained_variance
 
 tf = try_import_tf()
 
@@ -400,6 +401,8 @@ def setup_mixins(policy, obs_space, action_space, config):
 AsyncPPOTFPolicy = build_tf_policy(
     name="AsyncPPOTFPolicy",
     loss_fn=build_appo_surrogate_loss,
+    stats_fn=stats,
+    grad_stats_fn=grad_stats,
     postprocess_fn=postprocess_trajectory,
     optimizer_fn=choose_optimizer,
     gradients_fn=clip_gradients,
