@@ -117,7 +117,7 @@ class PolicyOptimizer(object):
         res.update(info=self.stats())
         return res
 
-    def collect_metrics_pre(self,
+    def collect_metrics(self, adatation_type,
                         timeout_seconds,
                         min_history=100,
                         selected_workers=None):
@@ -134,7 +134,7 @@ class PolicyOptimizer(object):
             res (dict): A training result dict from worker metrics with
                 `info` replaced with stats from self.
         """
-        episodes, num_dropped = collect_episodes(
+        episodes, num_dropped = collect_episodes(adatation_type,
             None,
             selected_workers,
             timeout_seconds=timeout_seconds)
@@ -145,40 +145,6 @@ class PolicyOptimizer(object):
             assert len(episodes) <= min_history
         self.episode_history.extend(orig_episodes)
         self.episode_history = self.episode_history[-min_history:]
-        res = summarize_episodes(episodes, orig_episodes, num_dropped)
-        res.update(info=self.stats())
-        return res
-
-    @DeveloperAPI
-    def collect_metrics_post(self,
-                        timeout_seconds,
-                        min_history=100,
-                        selected_workers=None):
-        """Returns worker and optimizer stats.
-
-        Arguments:
-            timeout_seconds (int): Max wait time for a worker before
-                dropping its results. This usually indicates a hung worker.
-            min_history (int): Min history length to smooth results over.
-            selected_workers (list): Override the list of remote workers
-                to collect metrics from.
-
-        Returns:
-            res (dict): A training result dict from worker metrics with
-                `info` replaced with stats from self.
-        """
-        episodes, num_dropped = collect_episodes(
-            None,
-            selected_workers,
-            timeout_seconds=timeout_seconds)
-        #print(episodes, num_dropped)
-        orig_episodes = list(episodes)
-        missing = min_history - len(episodes)
-        if missing > 0:
-            episodes.extend(self.episode_history[-missing:])
-            assert len(episodes) <= min_history
-        self.episode_history_post.extend(orig_episodes)
-        self.episode_history_post = self.episode_history_post[-min_history:]
         res = summarize_episodes(episodes, orig_episodes, num_dropped)
         res.update(info=self.stats())
         return res

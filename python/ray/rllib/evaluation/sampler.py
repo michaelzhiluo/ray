@@ -64,6 +64,14 @@ class SamplerInput(InputReader):
         else:
             return batches[0]
 
+    def next(self, adaptation_type):
+        batches = [self.get_data(adaptation_type)]
+        batches.extend(self.get_extra_batches())
+        if len(batches) > 1:
+            return batches[0].concat_samples(batches)
+        else:
+            return batches[0]
+
 
 class SyncSampler(SamplerInput):
     def __init__(self,
@@ -94,14 +102,24 @@ class SyncSampler(SamplerInput):
             self.policy_mapping_fn, self.unroll_length, self.horizon,
             self.preprocessors, self.obs_filters, clip_rewards, clip_actions,
             pack, callbacks, tf_sess, self.perf_stats, soft_horizon)
-        self.metrics_queue = queue.Queue()
+        #self.metrics_queue = queue.Queue()
+        self.metrics_queue = {}
+        self.metrics_queue["pre"] = queue.Queue()
+        self.metrics_queue["post"] = queue.Queue()
 
     def get_data(self):
         while True:
             item = next(self.rollout_provider)
             if isinstance(item, RolloutMetrics):
-                print(item)
                 self.metrics_queue.put(item)
+            else:
+                return item
+
+    def get_data(self, adaptation_type):
+        while True:
+            item = next(self.rollout_provider)
+            if isinstance(item, RolloutMetrics):
+                self.metrics_queue[adaptation_type].put(item)
             else:
                 return item
 
@@ -110,6 +128,17 @@ class SyncSampler(SamplerInput):
         while True:
             try:
                 completed.append(self.metrics_queue.get_nowait()._replace(
+                    perf_stats=self.perf_stats.get()))
+            except queue.Empty:
+                break
+        return completed
+
+
+    def get_metrics(self, adaptation_type):
+        completed = []
+        while True:
+            try:
+                completed.append(self.metrics_queue[adaptation_type].get_nowait()._replace(
                     perf_stats=self.perf_stats.get()))
             except queue.Empty:
                 break

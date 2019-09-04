@@ -244,7 +244,6 @@ class RolloutWorker(EvaluatorInterface):
                 "to prevent it from being evaluated as an expression.")
         self.env_creator = env_creator
         self.sample_batch_size = batch_steps * num_envs
-        print(batch_steps, num_envs, self.sample_batch_size)
         self.batch_mode = batch_mode
         self.compress_observations = compress_observations
         self.preprocessing_enabled = True
@@ -478,6 +477,63 @@ class RolloutWorker(EvaluatorInterface):
             self.last_batch = batch
         return batch
 
+    def sample(self, adaptation_type="pre"):
+        """Evaluate the current policies and return a batch of experiences.
+
+        Return:
+            SampleBatch|MultiAgentBatch from evaluating the current policies.
+        """
+
+        if self._fake_sampler and self.last_batch is not None:
+            return self.last_batch
+
+        if log_once("sample_start"):
+            logger.info("Generating sample batch of size {}".format(
+                self.sample_batch_size))
+
+        batches = [self.input_reader.next(adaptation_type)]
+        steps_so_far = batches[0].count
+
+        # In truncate_episodes mode, never pull more than 1 batch per env.
+        # This avoids over-running the target batch size.
+        if self.batch_mode == "truncate_episodes":
+            max_batches = self.num_envs
+        else:
+            max_batches = float("inf")
+
+        while steps_so_far < self.sample_batch_size and len(
+                batches) < max_batches:
+            batch = self.input_reader.next(adaptation_type)
+            steps_so_far += batch.count
+            batches.append(batch)
+        batch = batches[0].concat_samples(batches)
+
+        if self.callbacks.get("on_sample_end"):
+            self.callbacks["on_sample_end"]({"worker": self, "samples": batch})
+
+        # Always do writes prior to compression for consistency and to allow
+        # for better compression inside the writer.
+        self.output_writer.write(batch)
+
+        # Do off-policy estimation if needed
+        if self.reward_estimators:
+            for sub_batch in batch.split_by_episode():
+                for estimator in self.reward_estimators:
+                    estimator.process(sub_batch)
+
+        if log_once("sample_end"):
+            logger.info("Completed sample batch:\n\n{}\n".format(
+                summarize(batch)))
+
+        if self.compress_observations == "bulk":
+            batch.compress(bulk=True)
+        elif self.compress_observations:
+            batch.compress()
+
+        if self._fake_sampler:
+            self.last_batch = batch
+        return batch
+
     @DeveloperAPI
     @ray.method(num_return_vals=2)
     def sample_with_count(self):
@@ -588,6 +644,15 @@ class RolloutWorker(EvaluatorInterface):
 
         out = self.sampler.get_metrics()
         for m in self.reward_estimators:
+            out.extend(m.get_metrics())
+        return out
+
+    def get_metrics(self, adaptation_type):
+        """Returns a list of new RolloutMetric objects from evaluation."""
+
+        out = self.sampler.get_metrics(adaptation_type)
+        for m in self.reward_estimators:
+            print("hi?")
             out.extend(m.get_metrics())
         return out
 

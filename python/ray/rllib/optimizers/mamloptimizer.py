@@ -58,7 +58,7 @@ class MAMLOptimizer(PolicyOptimizer):
         with self.sample_timer:
 
             # Pre Adaptation Sampling from Workers
-            samples = ray_get_and_free([e.sample.remote() for e in self.workers.remote_workers()])
+            samples = ray_get_and_free([e.sample.remote("pre") for e in self.workers.remote_workers()])
             all_samples = SampleBatch.concat_samples(samples)
 
             # Data Collection for Meta-Update Step (which will be done on Master Learner)
@@ -67,7 +67,7 @@ class MAMLOptimizer(PolicyOptimizer):
                 for i, e in enumerate(self.workers.remote_workers()):
                     e.learn_on_batch.remote(samples[i])
                 # Post Adaptation Sampling from Workers
-                samples = ray_get_and_free([e.sample.remote() for e in self.workers.remote_workers()])
+                samples = ray_get_and_free([e.sample.remote("post") for e in self.workers.remote_workers()])
                 all_samples = all_samples.concat(SampleBatch.concat_samples(samples))
 
         #import pdb; pdb.set_trace()

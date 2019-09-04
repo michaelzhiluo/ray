@@ -144,11 +144,15 @@ class MAMLLoss(object):
         self.value_targets = self.split_placeholders(value_targets)
         self.vf_preds = self.split_placeholders(vf_preds)
         self.valid_mask = self.split_placeholders(valid_mask)
+
         #import pdb; pdb.set_trace()
+        
         #  Construct name to tensor dictionary
         self.policy_vars = {}
         for var in policy_vars:
             self.policy_vars[var.name] = var
+
+        #import pdb; pdb.set_trace()
 
         # Calculate pi_new for PPO
         pi_new_logits, current_policy_vars, value_fns = [], [], []
@@ -189,19 +193,19 @@ class MAMLLoss(object):
         ppo_obj = []
         for i in range(self.num_tasks):
             ppo_loss, _, kl_loss, _, _ = self.PPOLoss(
-                    self.actions[self.inner_adaptation_steps][i],
-                    pi_new_logits[i],
-                    self.behaviour_logits[self.inner_adaptation_steps][i],
-                    self.advantages[self.inner_adaptation_steps][i],
-                    value_fns[i],
-                    self.value_targets[self.inner_adaptation_steps][i],
-                    self.vf_preds[self.inner_adaptation_steps][i],
-                    cur_kl_coeff,
-                    self.valid_mask[self.inner_adaptation_steps][i],
-                    entropy_coeff,
-                    clip_param,
-                    vf_clip_param,
-                    vf_loss_coeff
+                    actions = self.actions[self.inner_adaptation_steps][i],
+                    curr_logits = pi_new_logits[i],
+                    behaviour_logits = self.behaviour_logits[self.inner_adaptation_steps][i],
+                    advantages = self.advantages[self.inner_adaptation_steps][i],
+                    value_fn = value_fns[i],
+                    value_targets = self.value_targets[self.inner_adaptation_steps][i],
+                    vf_preds = self.vf_preds[self.inner_adaptation_steps][i],
+                    cur_kl_coeff = cur_kl_coeff,
+                    valid_mask = self.valid_mask[self.inner_adaptation_steps][i],
+                    entropy_coeff = entropy_coeff,
+                    clip_param = clip_param,
+                    vf_clip_param = vf_clip_param,
+                    vf_loss_coeff = vf_loss_coeff
                     )
             ppo_obj.append(ppo_loss)
 

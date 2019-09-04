@@ -78,6 +78,35 @@ def collect_episodes(local_worker=None, remote_workers=[],
 
 
 @DeveloperAPI
+def collect_episodes(adaptation_type, local_worker=None, remote_workers=[],
+                     timeout_seconds=180):
+    """Gathers new episodes metrics tuples from the given evaluators."""
+
+    if remote_workers:
+        pending = [
+            a.apply.remote(lambda ev: ev.get_metrics(adaptation_type)) for a in remote_workers
+        ]
+        collected, _ = ray.wait(
+            pending, num_returns=len(pending), timeout=timeout_seconds * 1.0)
+        num_metric_batches_dropped = len(pending) - len(collected)
+        if pending and len(collected) == 0:
+            raise ValueError(
+                "Timed out waiting for metrics from workers. You can "
+                "configure this timeout with `collect_metrics_timeout`.")
+        metric_lists = ray_get_and_free(collected)
+    else:
+        metric_lists = []
+        num_metric_batches_dropped = 0
+
+    if local_worker:
+        metric_lists.append(local_worker.get_metrics())
+    episodes = []
+    for metrics in metric_lists:
+        episodes.extend(metrics)
+    return episodes, num_metric_batches_dropped
+
+
+@DeveloperAPI
 def summarize_episodes(episodes, new_episodes, num_dropped):
     """Summarizes a set of episode metrics tuples.
 

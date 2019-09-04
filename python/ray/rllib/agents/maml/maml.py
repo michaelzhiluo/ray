@@ -26,10 +26,6 @@ DEFAULT_CONFIG = with_common_config({
     "kl_coeff": 0.2,
     # Size of batches collected from each worker
     "sample_batch_size": 200,
-    # Number of timesteps collected for each SGD round
-    "train_batch_size": 4000,
-    # Total SGD batch size across all devices for SGD
-    "sgd_minibatch_size": 128,
     # Number of SGD iterations in each outer loop
     "num_sgd_iter": 30,
     # Stepsize of SGD
@@ -96,8 +92,6 @@ class MAMLTrainer(Trainer):
 
     @override(Trainer)
     def _train(self):
-        weights = ray.put(self.workers.local_worker().get_weights())
-
         if "observation_filter" not in self.raw_user_config:
             # TODO(ekl) remove this message after a few releases
             logger.info(
@@ -113,28 +107,21 @@ class MAMLTrainer(Trainer):
             self.workers.local_worker().for_policy(
                 lambda pi: pi.update_kl(fetches["kl"]))
 
-        # Half of the workers collect data for pre-adaptation metrics, other half collect data for post-adaptation metrics
-        half_index = int(len(self.workers.remote_workers())/2)
-        first_half  = self.workers.remote_workers()[:half_index]
-        second_half = self.workers.remote_workers()[half_index:]
-        for e in first_half:
-            e.set_weights.remote(weights)
-
         # Pre adaptation metrics
-        res = self.optimizer.collect_metrics_pre(
+        res = self.optimizer.collect_metrics("pre",
             self.config["collect_metrics_timeout"],
             min_history=self.config["metrics_smoothing_episodes"],
-            selected_workers=first_half)
+            selected_workers=self.workers.remote_workers())
         res.update(
             timesteps_this_iter=self.optimizer.num_steps_sampled - prev_steps,
             info=res.get("info", {}))
         print("Pre adaption stats", res)
 
         # Post adaptation metrics
-        res1 = self.optimizer.collect_metrics_post(
+        res1 = self.optimizer.collect_metrics("post",
             self.config["collect_metrics_timeout"],
             min_history=self.config["metrics_smoothing_episodes"],
-            selected_workers=second_half)
+            selected_workers=self.workers.remote_workers())
         print("Post adaptation stats", res1)
 
         res = self.update_pre_post_stats(res, res1)
@@ -156,17 +143,11 @@ class MAMLTrainer(Trainer):
                 "{} iterations for your value ".format(rew_scale) +
                 "function to converge. If this is not intended, consider "
                 "increasing `vf_clip_param`.")
-        #import pdb; pdb.set_trace()
         return res
 
     def _validate_config(self):
         if self.config["entropy_coeff"] < 0:
             raise DeprecationWarning("entropy_coeff must be >= 0")
-        if self.config["sgd_minibatch_size"] > self.config["train_batch_size"]:
-            raise ValueError(
-                "Minibatch size {} must be <= train batch size {}.".format(
-                    self.config["sgd_minibatch_size"],
-                    self.config["train_batch_size"]))
         if (self.config["batch_mode"] == "truncate_episodes"
                 and not self.config["use_gae"]):
             raise ValueError(
