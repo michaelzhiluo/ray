@@ -96,7 +96,7 @@ COMMON_CONFIG = {
     # None means clip for Atari only.
     "clip_rewards": None,
     # Whether to np.clip() actions to the action space low/high range spec.
-    "clip_actions": True,
+    "clip_actions": False,
     # Whether to use rllib or deepmind preprocessors by default
     "preprocessor_pref": "deepmind",
     # The default learning rate

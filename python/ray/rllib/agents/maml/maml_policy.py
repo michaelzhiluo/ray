@@ -96,15 +96,18 @@ class PPOLoss(object):
         self.mean_policy_loss = reduce_mean_valid(-surrogate_loss)
 
         # GAE Value Function Loss
+        '''
         vf_loss1 = tf.square(value_fn - value_targets)
         vf_clipped = vf_preds + tf.clip_by_value(
             value_fn - vf_preds, -vf_clip_param, vf_clip_param)
         vf_loss2 = tf.square(vf_clipped - value_targets)
         vf_loss = tf.maximum(vf_loss1, vf_loss2)
         self.mean_vf_loss = reduce_mean_valid(vf_loss)
+        '''
         loss = reduce_mean_valid(
-            -surrogate_loss + 0 * action_kl +
-            vf_loss_coeff * vf_loss - entropy_coeff * curr_entropy)
+            -surrogate_loss)
+            #+ 0 * action_kl +
+            #vf_loss_coeff * vf_loss - entropy_coeff * curr_entropy)
         loss = tf.Print(loss, ["Worker Loss", loss])
         self.loss = loss
 
@@ -136,6 +139,7 @@ class MAMLLoss(object):
         self.dist_class = dist_class
         self.cur_kl_coeff = cur_kl_coeff
 
+
         # Split episode tensors into [inner_adaptation_steps, num_tasks, -1]
         self.obs = self.split_placeholders(obs)
         self.actions = self.split_placeholders(actions)
@@ -152,6 +156,8 @@ class MAMLLoss(object):
         for var in policy_vars:
             self.policy_vars[var.name] = var
 
+        #self._create_step_size_vars()
+
         #import pdb; pdb.set_trace()
 
         # Calculate pi_new for PPO
@@ -163,6 +169,7 @@ class MAMLLoss(object):
             current_policy_vars.append(self.policy_vars)
 
         inner_kls = []
+        inner_ppo_loss = []
         # Recompute weights for inner-adaptation (since this is also incoporated in meta objective loss function)
         for step in range(self.inner_adaptation_steps):
             for i in range(self.num_tasks):
@@ -187,6 +194,7 @@ class MAMLLoss(object):
                 pi_new_logits[i], value_fns[i] = self.feed_forward(self.obs[step+1][i], adapted_policy_vars, policy_config=config["model"])
                 current_policy_vars[i] = adapted_policy_vars
                 inner_kls.append(kl_loss)
+                inner_ppo_loss.append(ppo_loss)
 
         mean_inner_kl = tf.reduce_mean(tf.stack(inner_kls, axis=0))
 
@@ -210,7 +218,7 @@ class MAMLLoss(object):
             ppo_obj.append(ppo_loss)
 
         self.loss = tf.reduce_mean(tf.stack(ppo_obj, axis=0)) + 0.0005*mean_inner_kl
-        self.loss = tf.Print(self.loss, [self.loss])
+        self.loss = tf.Print(self.loss, ["Meta-Loss", self.loss, ppo_obj, 0.0005*mean_inner_kl, "Inner PPO Loss", inner_ppo_loss])
 
     def PPOLoss(self,
          actions,
@@ -238,7 +246,7 @@ class MAMLLoss(object):
         vf_loss = reduce_mean_valid(self.vf_loss(value_fn, value_targets, vf_preds, vf_clip_param), valid_mask)
         entropy_loss = reduce_mean_valid(self.entropy_loss(pi_new_dist), valid_mask)
 
-        total_loss = - surr_loss + 0 * kl_loss + vf_loss_coeff * vf_loss - entropy_coeff * entropy_loss
+        total_loss = - surr_loss  # + 0 * kl_loss + vf_loss_coeff * vf_loss - entropy_coeff * entropy_loss
         return total_loss, surr_loss, kl_loss, vf_loss, entropy_loss
 
     def surrogate_loss(self, actions, curr_dist, prev_dist, advantages):
@@ -316,7 +324,10 @@ class MAMLLoss(object):
         counter =0
         for i, tup in enumerate(network_vars.items()):
             name, var = tup
-            adapted_vars[name] = var - INNER_LR*grad[i]
+            if grad[i] is None:
+                adapted_vars[name] = var
+            else:
+                adapted_vars[name] = var - 0.1*grad[i] #tf.multiply(self.step_sizes[name], grad[i])
         return adapted_vars
 
     def split_placeholders(self, placeholder):
@@ -325,6 +336,16 @@ class MAMLLoss(object):
         for split_placeholder in inner_placeholder_list:
             placeholder_list.append(tf.split(split_placeholder, self.num_tasks, axis=0))
         return placeholder_list
+
+    def _create_step_size_vars(self):
+        # Step sizes
+        step_sizes = dict()
+        for key, param in self.policy_vars.items():
+            shape = param.get_shape().as_list()
+            init_stepsize = np.ones(shape, dtype=np.float32) * INNER_LR
+            step_sizes[key] = tf.Variable(initial_value=init_stepsize,
+                                          dtype=tf.float32, trainable=False)
+        self.step_sizes = step_sizes
 
 
 class MAMLPostprocessing(object):

@@ -75,6 +75,7 @@ class MAMLTrainer(Trainer):
             env_creator, self._policy_graph, config, config["num_workers"])
         self.optimizer = MAMLOptimizer(
             self.workers,
+            config,
             inner_adaptation_steps=config["inner_adaptation_steps"],
             train_batch_size=config["train_batch_size"],
             maml_optimizer_steps=config["maml_optimizer_steps"])

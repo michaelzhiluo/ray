@@ -32,7 +32,8 @@ class FullyConnectedNetwork(Model):
                 last_layer = tf.layers.dense(
                     last_layer,
                     size,
-                    kernel_initializer=normc_initializer(1.0),
+                    kernel_initializer= tf.contrib.layers.xavier_initializer(),#normc_initializer(1.0),
+                    bias_initializer=tf.zeros_initializer(),
                     activation=activation,
                     name=label)
                 i += 1
@@ -40,7 +41,8 @@ class FullyConnectedNetwork(Model):
             output = tf.layers.dense(
                 last_layer,
                 num_outputs,
-                kernel_initializer=normc_initializer(0.01),
+                kernel_initializer= tf.contrib.layers.xavier_initializer(),#normc_initializer(0.01),
+                bias_initializer=tf.zeros_initializer(),
                 activation=None,
                 name=label)
             return output, last_layer
