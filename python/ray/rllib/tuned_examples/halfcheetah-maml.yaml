@@ -8,15 +8,14 @@ halfcheetah-maml:
         sample_batch_size: 100
         num_envs_per_worker: 20
         batch_mode: complete_episodes
+
         gamma: 0.99
         lambda: 1.0
-        num_sgd_iter: 32
         lr: .001
         vf_loss_coeff: 0.5
         clip_param: 0.3
         kl_coeff: 0.0005
-        num_workers: 4
+        num_workers: 1
         num_gpus: 1
-        grad_clip: 0.5
-        num_envs_per_worker: 32
+        grad_clip: 1000000000000000000000000
         observation_filter: MeanStdFilter                                         

@@ -48,12 +48,15 @@ class MAMLOptimizer(PolicyOptimizer):
     @override(PolicyOptimizer)
     def step(self):
         # Initialize Workers to have the same weights
+        print("Start of Optimizer Loop: Setting Weights")
         with self.update_weights_timer:
             if self.workers.remote_workers():
                 weights = ray.put(self.workers.local_worker().get_weights())
                 for e in self.workers.remote_workers():
                     e.set_weights.remote(weights)
+        print("Initial Worker Weight", ray_get_and_free(self.workers.remote_workers()[0].get_weights.remote()))
 
+        print("Setting Tasks for each Worker")
         # Set Tasks for each Worker
         with self.set_tasks_timer:
             env_configs = self.workers.local_worker().sample_tasks(self.num_tasks)
@@ -61,6 +64,8 @@ class MAMLOptimizer(PolicyOptimizer):
                 e.set_task.remote(env_configs[i])
 
         # Collecting Data from Pre and Post Adaptations
+
+        print("Sampling Data")
         with self.sample_timer:
 
             # Pre Adaptation Sampling from Workers
@@ -73,17 +78,21 @@ class MAMLOptimizer(PolicyOptimizer):
             # Data Collection for Meta-Update Step (which will be done on Master Learner)
             for step in range(self.inner_adaptation_steps):
                 # Inner Adaptation Gradient Steps
+                print("Inner Adaptation")
                 for i, e in enumerate(self.workers.remote_workers()):
                     e.learn_on_batch.remote(samples[i])
+                print("Sampling Data")
+                weights = ray_get_and_free(self.workers.remote_workers()[0].get_weights.remote())
+                print("Post Adaptation Weights", weights)
                 # Post Adaptation Sampling from Workers
                 samples = ray_get_and_free([e.sample.remote("post") for e in self.workers.remote_workers()])
-                samples = self.post_processing(samples, 20)
+                samples = self.post_processing(samples, self.config["num_envs_per_worker"])
                 all_samples = all_samples.concat(SampleBatch.concat_samples(samples))
 
         # Meta gradient Update
         # All Samples should be a list of list of dicts where the dims are (inner_adaptation_steps+1,num_workers,SamplesDict)
         # Should the whole computation graph be in master?
-
+        print("Meta Update")
         with self.meta_grad_timer:
             for i in range(self.maml_optimizer_steps):
                 fetches = self.workers.local_worker().learn_on_batch(all_samples)

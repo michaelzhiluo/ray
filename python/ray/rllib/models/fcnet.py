@@ -24,6 +24,8 @@ class FullyConnectedNetwork(Model):
         hiddens = options.get("fcnet_hiddens")
         activation = get_activation_fn(options.get("fcnet_activation"))
 
+        self.layers = []
+
         with tf.name_scope("fc_net"):
             i = 1
             last_layer = inputs
@@ -36,6 +38,7 @@ class FullyConnectedNetwork(Model):
                     bias_initializer=tf.zeros_initializer(),
                     activation=activation,
                     name=label)
+                self.layers += [last_layer]
                 i += 1
             label = "fc_out"
             output = tf.layers.dense(
@@ -45,4 +48,5 @@ class FullyConnectedNetwork(Model):
                 bias_initializer=tf.zeros_initializer(),
                 activation=None,
                 name=label)
+            self.layers += [output]
             return output, last_layer

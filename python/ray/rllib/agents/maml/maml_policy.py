@@ -78,11 +78,13 @@ class PPOLoss(object):
         def reduce_mean_valid(t):
             return tf.reduce_mean(tf.boolean_mask(t, valid_mask))
         print("PPO LOSS")
+        logits = tf.Print(logits, ["Worker Pi New", logits])
         dist_cls, _ = ModelCatalog.get_action_dist(action_space, {})
         prev_dist = dist_cls(logits)
         # Make loss functions.
         logp_ratio = tf.exp(
             curr_action_dist.logp(actions) - prev_dist.logp(actions))
+        logp_ratio = tf.Print(logp_ratio, ["Ratio", logp_ratio])
         action_kl = prev_dist.kl(curr_action_dist)
         self.mean_kl = reduce_mean_valid(action_kl)
 
@@ -139,8 +141,7 @@ class MAMLLoss(object):
         self.dist_class = dist_class
         self.cur_kl_coeff = cur_kl_coeff
 
-
-        # Split episode tensors into [inner_adaptation_steps, num_tasks, -1]
+        # Split episode tensors into [inner_adaptation_steps+1, num_tasks, -1]
         self.obs = self.split_placeholders(obs)
         self.actions = self.split_placeholders(actions)
         self.behaviour_logits = self.split_placeholders(behaviour_logits)
@@ -149,8 +150,6 @@ class MAMLLoss(object):
         self.vf_preds = self.split_placeholders(vf_preds)
         self.valid_mask = self.split_placeholders(valid_mask)
 
-        #import pdb; pdb.set_trace()
-        
         #  Construct name to tensor dictionary
         self.policy_vars = {}
         for var in policy_vars:
@@ -167,6 +166,9 @@ class MAMLLoss(object):
             pi_new_logits.append(pi_new)
             value_fns.append(value_fn)
             current_policy_vars.append(self.policy_vars)
+        #print(pi_new_logits)
+        pi_new_logits[0] = tf.Print(pi_new_logits[0], ["Pi New Logits Meta", pi_new_logits[0]])
+        current_policy_vars[0]["default_policy/fc1/kernel:0"] = tf.Print(current_policy_vars[0]["default_policy/fc1/kernel:0"], ["Initial Meta Weights", current_policy_vars[0]["default_policy/fc1/kernel:0"]])
 
         inner_kls = []
         inner_ppo_loss = []
@@ -175,19 +177,19 @@ class MAMLLoss(object):
             for i in range(self.num_tasks):
                 # Loss Function Shenanigans
                 ppo_loss, _, kl_loss, _, _ = self.PPOLoss(
-                    self.actions[step][i],
-                    pi_new_logits[i],
-                    self.behaviour_logits[step][i],
-                    self.advantages[step][i],
-                    value_fns[i],
-                    self.value_targets[step][i],
-                    self.vf_preds[step][i],
-                    cur_kl_coeff,
-                    self.valid_mask[step][i],
-                    entropy_coeff,
-                    clip_param,
-                    vf_clip_param,
-                    vf_loss_coeff
+                    actions = self.actions[step][i],
+                    curr_logits = pi_new_logits[i],
+                    behaviour_logits = self.behaviour_logits[step][i],
+                    advantages = self.advantages[step][i],
+                    value_fn = value_fns[i],
+                    value_targets = self.value_targets[step][i],
+                    vf_preds = self.vf_preds[step][i],
+                    cur_kl_coeff = cur_kl_coeff,
+                    valid_mask = self.valid_mask[step][i],
+                    entropy_coeff = entropy_coeff,
+                    clip_param = clip_param,
+                    vf_clip_param = vf_clip_param,
+                    vf_loss_coeff = vf_loss_coeff
                     )
 
                 adapted_policy_vars = self.compute_updated_variables(ppo_loss, current_policy_vars[i])
@@ -195,6 +197,7 @@ class MAMLLoss(object):
                 current_policy_vars[i] = adapted_policy_vars
                 inner_kls.append(kl_loss)
                 inner_ppo_loss.append(ppo_loss)
+
 
         mean_inner_kl = tf.reduce_mean(tf.stack(inner_kls, axis=0))
 
@@ -218,7 +221,7 @@ class MAMLLoss(object):
             ppo_obj.append(ppo_loss)
 
         self.loss = tf.reduce_mean(tf.stack(ppo_obj, axis=0)) + 0.0005*mean_inner_kl
-        self.loss = tf.Print(self.loss, ["Meta-Loss", self.loss, ppo_obj, 0.0005*mean_inner_kl, "Inner PPO Loss", inner_ppo_loss])
+        self.loss = tf.Print(self.loss, ["Meta-Loss", self.loss,"Inner PPO Loss", inner_ppo_loss, "Post Adapt Weights", current_policy_vars[0]["default_policy/fc1/kernel:0"]])
 
     def PPOLoss(self,
          actions,
@@ -237,7 +240,7 @@ class MAMLLoss(object):
     
         def reduce_mean_valid(t, valid_mask):
             return tf.reduce_mean(tf.boolean_mask(t, valid_mask))
-
+        print(self.dist_class)
         pi_new_dist = self.dist_class(curr_logits)
         pi_old_dist = self.dist_class(behaviour_logits)
 
@@ -254,7 +257,7 @@ class MAMLLoss(object):
         pi_old_logp = prev_dist.logp(actions)
 
         logp_ratio = tf.exp(pi_new_logp - pi_old_logp)
-
+        logp_ratio = tf.Print(logp_ratio, ["Log_p_ratio", logp_ratio])
         return tf.minimum(
             advantages * logp_ratio,
             advantages * tf.clip_by_value(logp_ratio, 1 - self.clip_param,
@@ -506,6 +509,7 @@ class MAMLTFPolicy(LearningRateSchedule, MAMLPostprocessing, TFPolicy):
         self.var_list = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
                                               tf.get_variable_scope().name)
         # If you are a task or worker, compute normal PPO Loss for inner adaptation update
+        self.worker_index = self.config["worker_index"]
         if self.config["worker_index"]:
             self.loss_obj = PPOLoss(
                 action_space,
