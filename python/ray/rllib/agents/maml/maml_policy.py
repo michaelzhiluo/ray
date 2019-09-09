@@ -33,6 +33,9 @@ INNER_LR = 0.1
 
 class PPOLoss(object):
     def __init__(self,
+                 obs,
+                 model,
+                 var_list,
                  action_space,
                  value_targets,
                  advantages,
@@ -74,17 +77,21 @@ class PPOLoss(object):
             vf_loss_coeff (float): Coefficient of the value function loss
             use_gae (bool): If true, use the Generalized Advantage Estimator.
         """
+        self.policy_vars = {}
+        for var in var_list:
+            self.policy_vars[var.name] = var
+
 
         def reduce_mean_valid(t):
             return tf.reduce_mean(tf.boolean_mask(t, valid_mask))
         print("PPO LOSS")
-        logits = tf.Print(logits, ["Worker Pi New", logits])
+        #logits = tf.Print(logits, ["Worker Pi New", logits])
         dist_cls, _ = ModelCatalog.get_action_dist(action_space, {})
         prev_dist = dist_cls(logits)
         # Make loss functions.
         logp_ratio = tf.exp(
             curr_action_dist.logp(actions) - prev_dist.logp(actions))
-        logp_ratio = tf.Print(logp_ratio, ["Ratio", logp_ratio])
+        #logp_ratio = tf.Print(logp_ratio, ["Ratio", logp_ratio])
         action_kl = prev_dist.kl(curr_action_dist)
         self.mean_kl = reduce_mean_valid(action_kl)
 
@@ -116,6 +123,7 @@ class PPOLoss(object):
 class MAMLLoss(object):
 
     def __init__(self,
+            model,
             config,
             dist_class, 
             value_targets,
@@ -149,11 +157,13 @@ class MAMLLoss(object):
         self.value_targets = self.split_placeholders(value_targets)
         self.vf_preds = self.split_placeholders(vf_preds)
         self.valid_mask = self.split_placeholders(valid_mask)
+        pi_new_init = self.split_placeholders(model.outputs)
 
         #  Construct name to tensor dictionary
         self.policy_vars = {}
         for var in policy_vars:
             self.policy_vars[var.name] = var
+        print(self.policy_vars)
 
         #self._create_step_size_vars()
 
@@ -162,13 +172,17 @@ class MAMLLoss(object):
         # Calculate pi_new for PPO
         pi_new_logits, current_policy_vars, value_fns = [], [], []
         for i in range(self.num_tasks):
-            pi_new, value_fn = self.feed_forward(self.obs[0][i], self.policy_vars, policy_config = config["model"])
+            pi_new, value_fn, layers = self.feed_forward(self.obs[0][i], self.policy_vars, policy_config = config["model"])
+            #pi_new = pi_new_init[0][i]
+            #if i==0:
+                #layers[0] = tf.Print(layers[0], ["NN layers", layers[1], layers[3], layers[5]])
+                #owo = layers[0]
             pi_new_logits.append(pi_new)
             value_fns.append(value_fn)
             current_policy_vars.append(self.policy_vars)
         #print(pi_new_logits)
-        pi_new_logits[0] = tf.Print(pi_new_logits[0], ["Pi New Logits Meta", pi_new_logits[0]])
-        current_policy_vars[0]["default_policy/fc1/kernel:0"] = tf.Print(current_policy_vars[0]["default_policy/fc1/kernel:0"], ["Initial Meta Weights", current_policy_vars[0]["default_policy/fc1/kernel:0"]])
+        #pi_new_logits[0] = tf.Print(pi_new_logits[0], ["Pi New Logits Meta", pi_new_logits[0]])
+        #current_policy_vars[0]["default_policy/fc1/kernel:0"] = tf.Print(current_policy_vars[0]["default_policy/fc1/kernel:0"], ["Initial Meta Weights", current_policy_vars[0]["default_policy/fc1/kernel:0"]])
 
         inner_kls = []
         inner_ppo_loss = []
@@ -193,7 +207,7 @@ class MAMLLoss(object):
                     )
 
                 adapted_policy_vars = self.compute_updated_variables(ppo_loss, current_policy_vars[i])
-                pi_new_logits[i], value_fns[i] = self.feed_forward(self.obs[step+1][i], adapted_policy_vars, policy_config=config["model"])
+                pi_new_logits[i], value_fns[i], layers = self.feed_forward(self.obs[step+1][i], adapted_policy_vars, policy_config=config["model"])
                 current_policy_vars[i] = adapted_policy_vars
                 inner_kls.append(kl_loss)
                 inner_ppo_loss.append(ppo_loss)
@@ -221,7 +235,7 @@ class MAMLLoss(object):
             ppo_obj.append(ppo_loss)
 
         self.loss = tf.reduce_mean(tf.stack(ppo_obj, axis=0)) + 0.0005*mean_inner_kl
-        self.loss = tf.Print(self.loss, ["Meta-Loss", self.loss,"Inner PPO Loss", inner_ppo_loss, "Post Adapt Weights", current_policy_vars[0]["default_policy/fc1/kernel:0"]])
+        self.loss = tf.Print(self.loss, ["Meta-Loss", self.loss, "Inner PPO Loss", inner_ppo_loss, "Post Adapt Weights", current_policy_vars[0]["default_policy/fc1/kernel:0"]]) # , #"Layers", owo])
 
     def PPOLoss(self,
          actions,
@@ -257,7 +271,7 @@ class MAMLLoss(object):
         pi_old_logp = prev_dist.logp(actions)
 
         logp_ratio = tf.exp(pi_new_logp - pi_old_logp)
-        logp_ratio = tf.Print(logp_ratio, ["Log_p_ratio", logp_ratio])
+        #logp_ratio = tf.Print(logp_ratio, ["Log_p_ratio", logp_ratio])
         return tf.minimum(
             advantages * logp_ratio,
             advantages * tf.clip_by_value(logp_ratio, 1 - self.clip_param,
@@ -285,6 +299,7 @@ class MAMLLoss(object):
         def fc_network(inp, network_vars, hidden_nonlinearity, output_nonlinearity):
             x = inp
             bias_added = False
+            layers = []
             for name, param in network_vars.items():
                 if "kernel" in name:
                     x = tf.matmul(x, param)
@@ -302,7 +317,8 @@ class MAMLLoss(object):
                     else:
                         raise NameError
                     bias_added = False
-            return x
+                layers.append(x)
+            return x, layers
 
         policyn_vars = {}
         valuen_vars = {}
@@ -316,13 +332,15 @@ class MAMLLoss(object):
         output_nonlinearity = tf.identity
         hidden_nonlinearity = get_activation_fn(policy_config["fcnet_activation"])
         
-        pi_new_logits = fc_network(obs, policyn_vars, hidden_nonlinearity, output_nonlinearity)
-        value_fn = fc_network(obs, valuen_vars, hidden_nonlinearity, output_nonlinearity)
+        pi_new_logits, layers = fc_network(obs, policyn_vars, hidden_nonlinearity, output_nonlinearity)
+        value_fn, _ = fc_network(obs, valuen_vars, hidden_nonlinearity, output_nonlinearity)
 
-        return pi_new_logits, tf.reshape(value_fn, [-1])
+        return pi_new_logits, tf.reshape(value_fn, [-1]), layers
 
     def compute_updated_variables(self, loss, network_vars):
         grad = tf.gradients(loss, list(network_vars.values()))
+        print("Inner Adapt Gradients", grad)
+        #grad[0] = tf.Print(grad[0], ["Inner Adapt Gradient", grad[0]])
         adapted_vars = {}
         counter =0
         for i, tup in enumerate(network_vars.items()):
@@ -512,6 +530,9 @@ class MAMLTFPolicy(LearningRateSchedule, MAMLPostprocessing, TFPolicy):
         self.worker_index = self.config["worker_index"]
         if self.config["worker_index"]:
             self.loss_obj = PPOLoss(
+                obs_ph,
+                self.model,
+                self.var_list,
                 action_space,
                 value_targets_ph,
                 adv_ph,
@@ -529,6 +550,7 @@ class MAMLTFPolicy(LearningRateSchedule, MAMLPostprocessing, TFPolicy):
         else:
             # If you are the master learner, compute meta-gradient objective
             self.loss_obj = MAMLLoss(
+                model = self.model,
                 config = self.config,
                 dist_class = dist_cls, 
                 value_targets = value_targets_ph,
@@ -597,6 +619,7 @@ class MAMLTFPolicy(LearningRateSchedule, MAMLPostprocessing, TFPolicy):
 
     @override(TFPolicy)
     def gradients(self, optimizer, loss):
+        '''
         if self.config["grad_clip"] is not None:
             self.var_list = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
                                               tf.get_variable_scope().name)
@@ -606,8 +629,14 @@ class MAMLTFPolicy(LearningRateSchedule, MAMLPostprocessing, TFPolicy):
             clipped_grads = list(zip(self.grads, self.var_list))
             return clipped_grads
         else:
-            return optimizer.compute_gradients(
-                loss, colocate_gradients_with_ops=True)
+        '''
+        grads = optimizer.compute_gradients(
+            loss, colocate_gradients_with_ops=True)
+        grad, tens = grads[0]
+        grad = tf.Print(grad, ["Total Loss Gradient", grad])
+        grads[0] = (grad, tens)
+
+        return grads
 
     @override(Policy)
     def get_initial_state(self):

@@ -197,8 +197,6 @@ class VTraceTFPolicy(LearningRateSchedule, VTracePostprocessing, TFPolicy):
         self.var_list = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
                                           tf.get_variable_scope().name)
 
-        import pdb; pdb.set_trace()
-
         def make_time_major(tensor, drop_last=False):
             """Swaps batch and trajectory axis.
             Args:

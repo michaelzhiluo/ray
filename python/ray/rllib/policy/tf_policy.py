@@ -18,6 +18,14 @@ from ray.rllib.utils.schedules import ConstantSchedule, PiecewiseSchedule
 from ray.rllib.utils.tf_run_builder import TFRunBuilder
 from ray.rllib.utils import try_import_tf
 
+
+from tensorflow.python.framework import ops
+from tensorflow.python.ops import math_ops, state_ops, control_flow_ops
+from tensorflow.python.ops import resource_variable_ops
+from tensorflow.python.training import optimizer
+from tensorflow.python.training import training_ops
+from tensorflow.python.util.tf_export import tf_export
+
 tf = try_import_tf()
 logger = logging.getLogger(__name__)
 
@@ -183,8 +191,8 @@ class TFPolicy(Policy):
             self._stats_fetches.update({"model": self.model.custom_stats()})
         else:
             self._loss = loss
-
         self._optimizer = self.optimizer()
+        #import pdb; pdb.set_trace()
         self._grads_and_vars = [
             (g, v) for (g, v) in self.gradients(self._optimizer, self._loss)
             if g is not None
@@ -528,6 +536,7 @@ class LearningRateSchedule(object):
     @DeveloperAPI
     def __init__(self, lr, lr_schedule, worker_index=0):
         self.worker_index = worker_index
+        self.lr = lr
         self.cur_lr = tf.get_variable("lr", initializer=lr)
         if lr_schedule is None:
             self.lr_schedule = ConstantSchedule(lr)
@@ -544,7 +553,31 @@ class LearningRateSchedule(object):
 
     @override(TFPolicy)
     def optimizer(self):
+        #import pdb; pdb.set_trace()
         if self.worker_index:
-            return tf.train.GradientDescentOptimizer(self.cur_lr)
+            return SimpleOptimizer(self.lr)
         else:
             return tf.train.AdamOptimizer(self.cur_lr)
+
+
+class SimpleOptimizer(optimizer.Optimizer):
+    def __init__(self, learning_rate=0.001,use_locking=False, name="SimpleOptimizer"):
+        super(SimpleOptimizer, self).__init__(use_locking, name)
+        self._lr = learning_rate
+        
+        # Tensor versions of the constructor arguments, created in _prepare().
+        self._lr_t = None
+
+    def _prepare(self):
+        self._lr_t = ops.convert_to_tensor(self._lr, name="learning_rate")
+
+    def _apply_dense(self, grad, var):
+        lr_t = math_ops.cast(self._lr_t, var.dtype.base_dtype)
+
+        var_update = state_ops.assign_sub(var, lr_t*grad) #Update 'ref' by subtracting 'value
+        #Create an op that groups multiple operations.
+        #When this op finishes, all ops in input have finished
+        return control_flow_ops.group(*[var_update])
+
+    def _apply_sparse(self, grad, var):
+        raise NotImplementedError("Sparse gradient updates are not supported.")
