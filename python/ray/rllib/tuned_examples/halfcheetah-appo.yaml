@@ -3,7 +3,7 @@
 halfcheetah-appo:
     env: HalfCheetah-v2
     run: APPO
-    local_dir: /data/mluo/testing
+    local_dir: /data/mluo/impala-hc-testing
     stop:
         time_total_s: 10800   
     config:
