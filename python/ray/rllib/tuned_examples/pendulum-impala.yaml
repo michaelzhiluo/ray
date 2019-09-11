@@ -1,0 +1,33 @@
+# can expect improvement to -140 reward in ~300-500k timesteps
+pendulum-impala:
+    env: InvertedPendulum-v2
+    run: IMPALA
+    local_dir: /data/mluo/pendulum-impala-results
+    stop:
+        time_total_s: 600
+    config:
+        vtrace: True
+        model:
+            vf_share_layers: False
+        gamma: 0.9
+        sample_batch_size: 256
+        train_batch_size: 4096
+        num_workers: 5
+        num_gpus: 1
+        broadcast_interval: 1
+        max_sample_requests_in_flight_per_worker: 1
+        num_data_loader_buffers: 1
+        num_envs_per_worker: 8 
+        minibatch_buffer_size: 1        
+        num_sgd_iter: 1
+        #lr: 0.0001
+        lr_schedule: [
+            [0, 0.0001],
+            [7000000, 0.00005],
+        ]
+        vf_loss_coeff: 1.0      
+        entropy_coeff: 0.0
+        grad_clip: 0.2
+        soft_horizon: True
+        batch_mode: truncate_episodes        
+        observation_filter: MeanStdFilter

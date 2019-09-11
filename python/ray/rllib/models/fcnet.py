@@ -20,10 +20,10 @@ class FullyConnectedNetwork(Model):
         Note that dict inputs will be flattened into a vector. To define a
         model that processes the components separately, use _build_layers_v2().
         """
-
+        #import pdb; pdb.set_trace()
         hiddens = options.get("fcnet_hiddens")
         activation = get_activation_fn(options.get("fcnet_activation"))
-
+        #activation = tf.nn.relu6
         with tf.name_scope("fc_net"):
             i = 1
             last_layer = inputs
@@ -53,4 +53,10 @@ class FullyConnectedNetwork(Model):
                 kernel_initializer=normc_initializer(0.01),
                 activation=None,
                 name="fc_out")
+            #import pdb; pdb.set_trace()
+            if not self.is_value_fn:
+                mean, std = tf.split(output, 2, axis=1)
+                mean = tf.nn.tanh(mean)*1.0
+                std = tf.nn.softplus(std)
+                output = tf.concat([mean, std], axis=1)
             return output, last_layer

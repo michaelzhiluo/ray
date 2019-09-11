@@ -1,13 +1,11 @@
 # Runs on a single g3.16xl node
 # See https://github.com/ray-project/rl-experiments for results
 atari-ppo:
-    env:
-        grid_search:
-            - BreakoutNoFrameskip-v4
-            - BeamRiderNoFrameskip-v4
-            - QbertNoFrameskip-v4
-            - SpaceInvadersNoFrameskip-v4
+    env: BreakoutNoFrameskip-v4
     run: PPO
+    local_dir: /data/mluo/breakout-ppo-results
+    stop:
+        time_total_s: 10800
     config:
         lambda: 0.95
         kl_coeff: 0.5
@@ -19,7 +17,7 @@ atari-ppo:
         sample_batch_size: 100
         sgd_minibatch_size: 500
         num_sgd_iter: 10
-        num_workers: 10
+        num_workers: 32
         num_envs_per_worker: 5
         batch_mode: truncate_episodes
         observation_filter: NoFilter

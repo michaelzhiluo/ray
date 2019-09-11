@@ -73,17 +73,6 @@ def create_parser(parser_creator=None):
         type=str,
         help="Name of the subdirectory under `local_dir` to put results in.")
     parser.add_argument(
-        "--local-dir",
-        default=DEFAULT_RESULTS_DIR,
-        type=str,
-        help="Local dir to save training results to. Defaults to '{}'.".format(
-            DEFAULT_RESULTS_DIR))
-    parser.add_argument(
-        "--upload-dir",
-        default="",
-        type=str,
-        help="Optional URI to sync training results to (e.g. s3://bucket).")
-    parser.add_argument(
         "--resume",
         action="store_true",
         help="Whether to attempt to resume previous Tune experiments.")

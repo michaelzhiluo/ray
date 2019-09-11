@@ -161,8 +161,10 @@ class DiagGaussian(ActionDistribution):
     def __init__(self, inputs):
         mean, log_std = tf.split(inputs, 2, axis=1)
         self.mean = mean
-        self.log_std = log_std
-        self.std = tf.exp(log_std)
+        self.std = log_std
+        self.log_std = tf.log(log_std)
+        #self.log_std = log_std
+        #self.std = tf.exp(log_std)
         ActionDistribution.__init__(self, inputs)
 
     @override(ActionDistribution)
@@ -189,7 +191,8 @@ class DiagGaussian(ActionDistribution):
 
     @override(ActionDistribution)
     def _build_sample_op(self):
-        return self.mean + self.std * tf.random_normal(tf.shape(self.mean))
+        return tf.clip_by_value(self.mean + self.std * tf.random_normal(tf.shape(self.mean)), -1.0, 1.0)
+        #return self.mean + self.std * tf.random_normal(tf.shape(self.mean))
 
 
 class Deterministic(ActionDistribution):

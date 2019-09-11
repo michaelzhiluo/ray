@@ -294,6 +294,7 @@ class ModelCatalog(object):
                   action_space,
                   num_outputs,
                   options,
+                  is_value_fn=False,
                   state_in=None,
                   seq_lens=None):
         """Returns a suitable model conforming to given input and output specs.
@@ -316,7 +317,7 @@ class ModelCatalog(object):
         options = options or MODEL_DEFAULTS
         model = ModelCatalog._get_model(input_dict, obs_space, action_space,
                                         num_outputs, options, state_in,
-                                        seq_lens)
+                                        seq_lens, is_value_fn=is_value_fn)
 
         if options.get("use_lstm"):
             copy = dict(input_dict)
@@ -336,7 +337,7 @@ class ModelCatalog(object):
 
     @staticmethod
     def _get_model(input_dict, obs_space, action_space, num_outputs, options,
-                   state_in, seq_lens):
+                   state_in, seq_lens, is_value_fn=False):
         if options.get("custom_model"):
             model = options["custom_model"]
             logger.debug("Using custom model {}".format(model))
@@ -353,10 +354,10 @@ class ModelCatalog(object):
 
         if obs_rank > 1:
             return VisionNetwork(input_dict, obs_space, action_space,
-                                 num_outputs, options)
+                                 num_outputs, options, is_value_fn=is_value_fn)
 
         return FullyConnectedNetwork(input_dict, obs_space, action_space,
-                                     num_outputs, options)
+                                     num_outputs, options, is_value_fn=is_value_fn)
 
     @staticmethod
     @DeveloperAPI

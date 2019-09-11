@@ -121,6 +121,7 @@ def make_v1_wrapper(legacy_model_cls):
                         "If you want to not share layers, you can implement "
                         "a custom LSTM model that overrides the "
                         "value_function() method.")
+                #import pdb; pdb.set_trace()
                 branch_instance = self.legacy_model_cls(
                     self.cur_instance.input_dict,
                     self.obs_space,
@@ -128,7 +129,8 @@ def make_v1_wrapper(legacy_model_cls):
                     1,
                     branch_model_config,
                     state_in=None,
-                    seq_lens=None)
+                    seq_lens=None,
+                    is_value_fn=True)
                 return tf.reshape(branch_instance.outputs, [-1])
 
         def _branch_variable_scope(self, branch_type):

@@ -54,9 +54,10 @@ class Model(object):
                  num_outputs,
                  options,
                  state_in=None,
-                 seq_lens=None):
+                 seq_lens=None,
+                 is_value_fn=False):
         assert isinstance(input_dict, dict), input_dict
-
+        self.is_value_fn = is_value_fn
         # Default attribute values for the non-RNN case
         self.state_init = []
         self.state_in = state_in or []

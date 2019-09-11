@@ -1,0 +1,16 @@
+# Runs on a single g3.16xl node
+# See https://github.com/ray-project/rl-experiments for results
+pendulum-a2c:
+    env: InvertedPendulum-v2
+    local_dir: /data/mluo/inverted-a3c
+    run: A2C
+    config:
+        sample_batch_size: 200
+        clip_rewards: True
+        num_workers: 5
+        num_envs_per_worker: 32
+        num_gpus: 1
+        lr_schedule: [
+            [0, 0.0007],
+            [20000000, 0.000000000001],
+        ]

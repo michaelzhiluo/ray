@@ -15,7 +15,7 @@ DEFAULT_CONFIG = with_common_config({
     # Use PyTorch as backend - no LSTM support
     "use_pytorch": False,
     # GAE(gamma) parameter
-    "lambda": 1.0,
+    "lambda": 0.995,
     # Max global norm for each gradient calculated by worker
     "grad_clip": 40.0,
     # Learning rate

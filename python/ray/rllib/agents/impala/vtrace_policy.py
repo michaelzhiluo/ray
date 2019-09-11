@@ -164,6 +164,8 @@ def build_vtrace_loss(policy, batch_tensors):
     behaviour_logits = batch_tensors[BEHAVIOUR_LOGITS]
     unpacked_behaviour_logits = tf.split(
         behaviour_logits, output_hidden_shape, axis=1)
+    policy.model_out = tf.Print(policy.model_out, ["policy model out", policy.model_out], summarize = 20)
+
     unpacked_outputs = tf.split(policy.model_out, output_hidden_shape, axis=1)
     action_dist = policy.action_dist
     values = policy.value_function
