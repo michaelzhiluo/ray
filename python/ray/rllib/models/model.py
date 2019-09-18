@@ -54,9 +54,9 @@ class Model(object):
                  num_outputs,
                  options,
                  state_in=None,
-                 seq_lens=None):
+                 seq_lens=None,
+                 context=None):
         assert isinstance(input_dict, dict), input_dict
-
         # Default attribute values for the non-RNN case
         self.state_init = []
         self.state_in = state_in or []
@@ -85,13 +85,14 @@ class Model(object):
                 restored, num_outputs, options)
         except NotImplementedError:
             self.outputs, self.last_layer = self._build_layers(
-                input_dict["obs"], num_outputs, options)
+                input_dict["obs"], num_outputs, options, context = input_dict["context"] if 'context' in input_dict else None)
 
         if options.get("free_log_std", False):
             log_std = tf.get_variable(
                 name="log_std",
                 shape=[num_outputs],
                 initializer=tf.zeros_initializer)
+            #import pdb; pdb.set_trace()
             self.outputs = tf.concat(
                 [self.outputs, 0.0 * self.outputs + log_std], 1)
 

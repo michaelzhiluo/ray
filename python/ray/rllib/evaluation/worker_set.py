@@ -179,7 +179,7 @@ class WorkerSet(object):
                 if v[0] is None:
                     tmp[k] = (policy, v[1], v[2], v[3])
             policy = tmp
-        config["num_envs_per_worker"] = 20
+        #config["num_envs_per_worker"] = 20
         return cls(
             env_creator,
             policy,

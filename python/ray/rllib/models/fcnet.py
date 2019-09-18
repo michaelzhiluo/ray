@@ -14,7 +14,7 @@ class FullyConnectedNetwork(Model):
     """Generic fully connected network."""
 
     @override(Model)
-    def _build_layers(self, inputs, num_outputs, options):
+    def _build_layers(self, inputs, num_outputs, options, context = None):
         """Process the flattened inputs.
 
         Note that dict inputs will be flattened into a vector. To define a
@@ -24,7 +24,24 @@ class FullyConnectedNetwork(Model):
         hiddens = options.get("fcnet_hiddens")
         activation = get_activation_fn(options.get("fcnet_activation"))
 
-        self.layers = []
+        #import pdb; pdb.set_trace()
+        if context is not None:
+            context = tf.reshape(context, (-1,10))
+            with tf.variable_scope("hyper_film"):
+                x_hyp = context
+                hyper_hidden_sizes = (16, 32)
+                for idx, hidden_size in enumerate(hyper_hidden_sizes):
+                    x_hyp = tf.layers.dense(x_hyp, hidden_size, name='hidden_%d' % idx,
+                        activation=activation,
+                        kernel_initializer=tf.contrib.layers.xavier_initializer(),
+                        bias_initializer=tf.zeros_initializer())
+                x_hyp = tf.layers.dense(x_hyp, 2*sum(hiddens), name='hyper_out',
+                    activation=None,
+                    kernel_initializer=tf.contrib.layers.xavier_initializer(),
+                    bias_initializer=tf.zeros_initializer())
+                film_params = tf.split(x_hyp, [val for val in hiddens for _ in (0, 1)],axis=1)
+
+
 
         with tf.name_scope("fc_net"):
             i = 1
@@ -34,19 +51,19 @@ class FullyConnectedNetwork(Model):
                 last_layer = tf.layers.dense(
                     last_layer,
                     size,
-                    kernel_initializer= tf.contrib.layers.xavier_initializer(),#normc_initializer(1.0),
+                    kernel_initializer= tf.contrib.layers.xavier_initializer(),
                     bias_initializer=tf.zeros_initializer(),
                     activation=activation,
                     name=label)
-                self.layers += [last_layer]
+                if context is not None:
+                    last_layer = tf.einsum('ij,kj->ij', last_layer, film_params.pop(0))+ film_params.pop(0)
                 i += 1
             label = "fc_out"
             output = tf.layers.dense(
                 last_layer,
                 num_outputs,
-                kernel_initializer= tf.contrib.layers.xavier_initializer(),#normc_initializer(0.01),
+                kernel_initializer=tf.contrib.layers.xavier_initializer(),
                 bias_initializer=tf.zeros_initializer(),
                 activation=None,
                 name=label)
-            self.layers += [output]
             return output, last_layer

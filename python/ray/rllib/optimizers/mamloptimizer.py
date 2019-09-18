@@ -54,32 +54,37 @@ class MAMLOptimizer(PolicyOptimizer):
                 weights = ray.put(self.workers.local_worker().get_weights())
                 for e in self.workers.remote_workers():
                     e.set_weights.remote(weights)
-        print("Initial Worker Weight", ray_get_and_free(self.workers.remote_workers()[0].get_weights.remote()))
+        #print("Initial Worker Weight", ray_get_and_free(self.workers.remote_workers()[0].get_weights.remote()))
 
         print("Setting Tasks for each Worker")
         # Set Tasks for each Worker
         with self.set_tasks_timer:
             env_configs = self.workers.local_worker().sample_tasks(self.num_tasks)
+            #print(env_configs)
             for i,e in enumerate(self.workers.remote_workers()):
                 e.set_task.remote(env_configs[i])
 
+        #mport pdb; pdb.set_trace()
         # Collecting Data from Pre and Post Adaptations
-
         print("Sampling Data")
         with self.sample_timer:
 
             # Pre Adaptation Sampling from Workers
-            samples = ray_get_and_free([e.sample.remote("pre") for e in self.workers.remote_workers()])
+            samples = ray_get_and_free([e.sample.remote("pre") for i,e in enumerate(self.workers.remote_workers())])
 
-            #import pdb; pdb.set_trace()
             samples = self.post_processing(samples, self.config["num_envs_per_worker"])
             all_samples = SampleBatch.concat_samples(samples)
 
+            #import pdb; pdb.set_trace()
             # Data Collection for Meta-Update Step (which will be done on Master Learner)
             for step in range(self.inner_adaptation_steps):
                 # Inner Adaptation Gradient Steps
                 print("Inner Adaptation")
                 for i, e in enumerate(self.workers.remote_workers()):
+                    if self.config["use_context"] == "dynamic":
+                        samples[i]["context"] = np.array([env_configs[i]]*10)
+                    elif self.config["use_context"] == "static":
+                        samples[i]["context"] = np.array([1.0]*10)
                     e.learn_on_batch.remote(samples[i])
                 print("Sampling Data")
                 weights = ray_get_and_free(self.workers.remote_workers()[0].get_weights.remote())
@@ -87,8 +92,21 @@ class MAMLOptimizer(PolicyOptimizer):
                 # Post Adaptation Sampling from Workers
                 samples = ray_get_and_free([e.sample.remote("post") for e in self.workers.remote_workers()])
                 samples = self.post_processing(samples, self.config["num_envs_per_worker"])
+                #import pdb; pdb.set_trace()
+                #for i in range(self.num_tasks):
+                    #print(np.sum(samples[i]["rewards"].reshape(self.config["num_envs_per_worker"], -1), axis=1))
                 all_samples = all_samples.concat(SampleBatch.concat_samples(samples))
 
+        context_list = []
+        for i in env_configs:
+            if self.config["use_context"] == "dynamic":
+                context_list+= [i]*10
+            elif self.config["use_context"] == "static":
+                context_list+= [1.0]*10
+        context_list = np.array(context_list)
+
+        if not self.config["use_context"] == "none":
+            all_samples['context'] = context_list
         # Meta gradient Update
         # All Samples should be a list of list of dicts where the dims are (inner_adaptation_steps+1,num_workers,SamplesDict)
         # Should the whole computation graph be in master?
@@ -96,6 +114,7 @@ class MAMLOptimizer(PolicyOptimizer):
         with self.meta_grad_timer:
             for i in range(self.maml_optimizer_steps):
                 fetches = self.workers.local_worker().learn_on_batch(all_samples)
+                #import pdb; pdb.set_trace()
             self.learner_stats = get_learner_stats(fetches)
 
         self.num_steps_sampled += all_samples.count

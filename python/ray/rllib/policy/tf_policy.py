@@ -74,6 +74,7 @@ class TFPolicy(Policy):
                  seq_lens=None,
                  max_seq_len=20,
                  batch_divisibility_req=1,
+                 context = None,
                  update_ops=None):
         """Initialize the policy.
 
@@ -115,6 +116,7 @@ class TFPolicy(Policy):
         self.action_space = action_space
         self.model = model
         self._sess = sess
+        self._context_input = context
         self._obs_input = obs_input
         self._prev_action_input = prev_action_input
         self._prev_reward_input = prev_reward_input
@@ -128,6 +130,7 @@ class TFPolicy(Policy):
         self._batch_divisibility_req = batch_divisibility_req
         self._update_ops = update_ops
         self._stats_fetches = {}
+        self.context = None
 
         if loss is not None:
             self._initialize_loss(loss, loss_inputs)
@@ -427,6 +430,10 @@ class TFPolicy(Policy):
                 format(self._state_inputs, state_batches))
         builder.add_feed_dict(self.extra_compute_action_feed_dict())
         builder.add_feed_dict({self._obs_input: obs_batch})
+        if self.config["use_context"] == "dynamic":
+            builder.add_feed_dict({self._context_input: np.array([self.context]*10)})
+        elif self.config["use_context"] == "static":
+            builder.add_feed_dict({self._context_input: np.array([1.0]*10)})
         if state_batches:
             builder.add_feed_dict({self._seq_lens: np.ones(len(obs_batch))})
         if self._prev_action_input is not None and prev_action_batch:

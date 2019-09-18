@@ -9,7 +9,7 @@ from gym.envs.registration import registry, register, make, spec
 print("Registering Custom Environments")
 register(
     id='HalfCheetahRandDirec-v2',
-    entry_point='ray.rllib.env.half_cheetah_rand_direc:HalfCheetahRandDirecEnv',
+    entry_point='ray.rllib.env.half_cheetah_rand_direc:NormalizedEnv',
     max_episode_steps=1000,
 )
 
@@ -17,4 +17,3 @@ __all__ = [
     "BaseEnv", "MultiAgentEnv", "ExternalEnv", "VectorEnv", "ServingEnv",
     "EnvContext"
 ]
-

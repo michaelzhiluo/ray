@@ -228,7 +228,7 @@ class RolloutWorker(EvaluatorInterface):
             disable_log_once_globally()  # only need 1 worker to log
         elif log_level == "DEBUG":
             enable_periodic_logging()
-
+        self.context = None
         env_context = EnvContext(env_config or {}, worker_index)
         policy_config = policy_config or {}
         self.policy_config = policy_config
@@ -416,6 +416,9 @@ class RolloutWorker(EvaluatorInterface):
         return self.async_env.vector_env.envs[0].env.sample_tasks(n_tasks)
 
     def set_task(self, task):
+        if not self.policy_config["use_context"] == "none":
+            self.policy_map['default_policy'].context = task
+            self.context = task
         for env in self.async_env.vector_env.envs:
             env.env.set_task(task)
 
@@ -652,7 +655,6 @@ class RolloutWorker(EvaluatorInterface):
 
         out = self.sampler.get_metrics(adaptation_type)
         for m in self.reward_estimators:
-            print("hi?")
             out.extend(m.get_metrics())
         return out
 

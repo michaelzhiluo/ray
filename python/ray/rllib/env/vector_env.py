@@ -89,8 +89,11 @@ class _VectorizedGymEnv(VectorEnv):
         self.make_env = make_env
         self.envs = existing_envs
         self.num_envs = num_envs
+        import pickle
+        env_pickle = pickle.dumps(self.envs[0])
         while len(self.envs) < self.num_envs:
-            self.envs.append(self.make_env(len(self.envs)))
+            self.envs.append(pickle.loads(env_pickle))
+            #self.envs.append(self.make_env(len(self.envs)))
         self.action_space = action_space or self.envs[0].action_space
         self.observation_space = observation_space or \
             self.envs[0].observation_space

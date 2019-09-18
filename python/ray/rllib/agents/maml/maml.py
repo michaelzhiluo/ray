@@ -58,6 +58,8 @@ DEFAULT_CONFIG = with_common_config({
     "inner_adaptation_steps": 1,
 
     "maml_optimizer_steps": 5,
+    # dynamic, static, or none
+    "use_context": "dynamic"
 })
 # __sphinx_doc_end__
 # yapf: enable
