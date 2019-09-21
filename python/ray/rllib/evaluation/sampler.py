@@ -121,6 +121,7 @@ class SyncSampler(SamplerInput):
             if isinstance(item, RolloutMetrics):
                 self.metrics_queue[adaptation_type].put(item)
             else:
+                print(item['obs'].shape)
                 return item
 
     def get_metrics(self):

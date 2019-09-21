@@ -13,6 +13,12 @@ register(
     max_episode_steps=1000,
 )
 
+register(
+    id='Walker2DRandDirec-v2',
+    entry_point='ray.rllib.env.walker2d_rand_direc:NormalizedEnv',
+    max_episode_steps=1000,
+)
+
 __all__ = [
     "BaseEnv", "MultiAgentEnv", "ExternalEnv", "VectorEnv", "ServingEnv",
     "EnvContext"

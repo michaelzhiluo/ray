@@ -72,7 +72,9 @@ class MAMLOptimizer(PolicyOptimizer):
             # Pre Adaptation Sampling from Workers
             samples = ray_get_and_free([e.sample.remote("pre") for i,e in enumerate(self.workers.remote_workers())])
 
+            #import pdb; pdb.set_trace()
             samples = self.post_processing(samples, self.config["num_envs_per_worker"])
+
             all_samples = SampleBatch.concat_samples(samples)
 
             #import pdb; pdb.set_trace()

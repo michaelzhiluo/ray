@@ -27,9 +27,10 @@ class FullyConnectedNetwork(Model):
         #import pdb; pdb.set_trace()
         if context is not None:
             context = tf.reshape(context, (-1,10))
+            #context = tf.Print(context, ["context", context],summarize=12)
             with tf.variable_scope("hyper_film"):
                 x_hyp = context
-                hyper_hidden_sizes = (16, 32)
+                hyper_hidden_sizes = (32, 64)
                 for idx, hidden_size in enumerate(hyper_hidden_sizes):
                     x_hyp = tf.layers.dense(x_hyp, hidden_size, name='hidden_%d' % idx,
                         activation=activation,

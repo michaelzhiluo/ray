@@ -179,7 +179,7 @@ class MAMLLoss(object):
             value_fns.append(value_fn)
             current_policy_vars.append(self.policy_vars)
         #print(pi_new_logits)
-        pi_new_logits[0] = tf.Print(pi_new_logits[0], ["Pi New Logits Meta", pi_new_logits[0]])
+        #pi_new_logits[0] = tf.Print(pi_new_logits[0], ["Pi New Logits Meta", pi_new_logits[0]])
         #current_policy_vars[0]["default_policy/fc1/kernel:0"] = tf.Print(current_policy_vars[0]["default_policy/fc1/kernel:0"], ["Initial Meta Weights", current_policy_vars[0]["default_policy/fc1/kernel:0"]])
 
         inner_kls = []
@@ -236,7 +236,7 @@ class MAMLLoss(object):
             ppo_obj.append(ppo_loss)
 
         self.loss = tf.reduce_mean(tf.stack(ppo_obj, axis=0)) + 0.0005*mean_inner_kl
-        self.loss = tf.Print(self.loss, ["Meta-Loss", self.loss, "Inner PPO Loss", inner_ppo_loss, "Post Update Weights", current_policy_vars[0]['default_policy/fc1/kernel:0']])
+        self.loss = tf.Print(self.loss, ["Meta-Loss", self.loss], summarize=1000) #"Inner PPO Loss", inner_ppo_loss, "Post Update Weights", current_policy_vars[0]['default_policy/fc1/kernel:0']])
         # "default_policy/hyper_film/hidden_0/kernel:0"
 
     def PPOLoss(self,
@@ -484,9 +484,9 @@ class MAMLTFPolicy(LearningRateSchedule, MAMLPostprocessing, TFPolicy):
             prev_actions_ph = ModelCatalog.get_action_placeholder(action_space)
             prev_rewards_ph = tf.placeholder(
                 tf.float32, [None], name="prev_reward")
-            print(self.config["use_context"])
             if not self.config["use_context"] == "none":
                 context_ph = tf.placeholder(tf.float32, [None], name="context")
+                #context_ph = tf.print(context_ph, ["context_ph", context_ph])
             else:
                 context_ph = None
             existing_state_in = None
