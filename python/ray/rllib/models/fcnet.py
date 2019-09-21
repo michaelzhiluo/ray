@@ -54,9 +54,11 @@ class FullyConnectedNetwork(Model):
                 activation=None,
                 name="fc_out")
             #import pdb; pdb.set_trace()
+            '''
             if not self.is_value_fn:
                 mean, std = tf.split(output, 2, axis=1)
                 mean = tf.nn.tanh(mean)*1.0
                 std = tf.nn.softplus(std)
                 output = tf.concat([mean, std], axis=1)
+            '''
             return output, last_layer

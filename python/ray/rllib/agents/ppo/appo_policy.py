@@ -154,6 +154,7 @@ class VTraceSurrogateLoss(object):
         logp_ratio = self.is_ratio*tf.exp(actions_logp - prev_actions_logp)
 
         advantages = self.vtrace_returns.pg_advantages
+        #surrogate_loss = advantages * logp_ratio
         surrogate_loss = tf.minimum(
             advantages * logp_ratio,
             advantages * tf.clip_by_value(logp_ratio, 1 - clip_param,
