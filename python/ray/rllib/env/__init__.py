@@ -19,6 +19,18 @@ register(
     max_episode_steps=1000,
 )
 
+register(
+    id='AntRandGoal-v2',
+    entry_point='ray.rllib.env.ant_rand_goal:NormalizedEnv',
+    max_episode_steps=1000,
+)
+
+register(
+    id='HumanoidRandDirec-v2',
+    entry_point='ray.rllib.env.ant_rand_goal:NormalizedEnv',
+    max_episode_steps=1000,
+)
+
 __all__ = [
     "BaseEnv", "MultiAgentEnv", "ExternalEnv", "VectorEnv", "ServingEnv",
     "EnvContext"

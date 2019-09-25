@@ -305,6 +305,14 @@ class MAMLLoss(object):
             bias_added = False
             if context is not None:
                 c = context
+            #import pdb; pdb.set_trace()
+            if context is not None and policy_config["concat_context"]:
+                app = c[0][0:1]
+                app = tf.tile(app, tf.shape(inp)[0:1])
+                app = tf.reshape(app, [-1, 1])
+                inp = tf.concat([inp, app], axis =1)
+
+            if context is not None and not policy_config["concat_context"]:
                 for name, param in hyper_vars.items():
                     if "kernel" in name:
                         c = tf.matmul(c, param)
@@ -337,7 +345,7 @@ class MAMLLoss(object):
                 if bias_added:
                     if "fc_out" not in name:
                         x = hidden_nonlinearity(x)
-                        if context is not None:
+                        if context is not None and not policy_config["concat_context"]:
                             x =  tf.einsum('ij,kj->ij', x, film_params.pop(0))+ film_params.pop(0)
                     elif "fc_out" in name:
                         x = output_nonlinearity(x)
@@ -484,6 +492,7 @@ class MAMLTFPolicy(LearningRateSchedule, MAMLPostprocessing, TFPolicy):
             prev_actions_ph = ModelCatalog.get_action_placeholder(action_space)
             prev_rewards_ph = tf.placeholder(
                 tf.float32, [None], name="prev_reward")
+            #import pdb; pdb.set_trace()
             if not self.config["use_context"] == "none":
                 context_ph = tf.placeholder(tf.float32, [None], name="context")
                 #context_ph = tf.print(context_ph, ["context_ph", context_ph])

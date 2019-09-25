@@ -27,6 +27,14 @@ class FullyConnectedNetwork(Model):
         #import pdb; pdb.set_trace()
         if context is not None:
             context = tf.reshape(context, (-1,10))
+        #import pdb; pdb.set_trace()
+        if context is not None and options.get("concat_context"):
+            app = context[0][0:1]
+            app = tf.tile(app, tf.shape(inputs)[0:1])
+            app = tf.reshape(app, [-1, 1])
+            inputs = tf.concat([inputs, app], axis =1)
+
+        if context is not None and not options.get("concat_context"):
             #context = tf.Print(context, ["context", context],summarize=12)
             with tf.variable_scope("hyper_film"):
                 x_hyp = context
@@ -56,7 +64,7 @@ class FullyConnectedNetwork(Model):
                     bias_initializer=tf.zeros_initializer(),
                     activation=activation,
                     name=label)
-                if context is not None:
+                if context is not None and not options.get("concat_context"):
                     last_layer = tf.einsum('ij,kj->ij', last_layer, film_params.pop(0))+ film_params.pop(0)
                 i += 1
             label = "fc_out"

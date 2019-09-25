@@ -44,6 +44,9 @@ MODEL_DEFAULTS = {
     # (deprecated) Whether to use sigmoid to squash actions to space range
     "squash_to_range": False,
 
+    # Use when context is dynamic
+    "concat_context": False,
+
     # == LSTM ==
     # Whether to wrap the model with a LSTM
     "use_lstm": False,

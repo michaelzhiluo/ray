@@ -431,7 +431,7 @@ class TFPolicy(Policy):
         builder.add_feed_dict(self.extra_compute_action_feed_dict())
         builder.add_feed_dict({self._obs_input: obs_batch})
         if self.config["use_context"] == "dynamic":
-            builder.add_feed_dict({self._context_input: np.array([self.context]*10)})
+            builder.add_feed_dict({self._context_input: np.array([self.context]*10)}) #{self._context_input: np.array([self.context]*10)}
         elif self.config["use_context"] == "static":
             builder.add_feed_dict({self._context_input: np.array([1.0]*10)})
         if state_batches:

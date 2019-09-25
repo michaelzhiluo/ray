@@ -63,6 +63,7 @@ class MAMLOptimizer(PolicyOptimizer):
             #print(env_configs)
             for i,e in enumerate(self.workers.remote_workers()):
                 e.set_task.remote(env_configs[i])
+        #import pdb; pdb.set_trace()
 
         #mport pdb; pdb.set_trace()
         # Collecting Data from Pre and Post Adaptations
@@ -98,15 +99,18 @@ class MAMLOptimizer(PolicyOptimizer):
                 #for i in range(self.num_tasks):
                     #print(np.sum(samples[i]["rewards"].reshape(self.config["num_envs_per_worker"], -1), axis=1))
                 all_samples = all_samples.concat(SampleBatch.concat_samples(samples))
-
+        #import pdb; pdb.set_trace()
         context_list = []
         for i in env_configs:
+
             if self.config["use_context"] == "dynamic":
-                context_list+= [i]*10
+                context_list+= [i]*10 
             elif self.config["use_context"] == "static":
                 context_list+= [1.0]*10
-        context_list = np.array(context_list)
-
+        if len(context_list):
+            context_list = np.array(context_list).reshape([-1])
+        #import pdb; pdb.set_trace()
+        #import pdb; pdb.set_trace()
         if not self.config["use_context"] == "none":
             all_samples['context'] = context_list
         # Meta gradient Update
