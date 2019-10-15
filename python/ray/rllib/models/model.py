@@ -92,7 +92,6 @@ class Model(object):
                 name="log_std",
                 shape=[num_outputs],
                 initializer=tf.zeros_initializer)
-            #import pdb; pdb.set_trace()
             self.outputs = tf.concat(
                 [self.outputs, 0.0 * self.outputs + log_std], 1)
 

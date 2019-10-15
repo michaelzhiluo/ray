@@ -1,5 +1,5 @@
 halfcheetah-maml:
-    env: HalfCheetahRandDirec-v2
+    env: HumanoidRandDirec-v2
     run: MAML
     stop:
         training_iteration: 1001
@@ -18,9 +18,10 @@ halfcheetah-maml:
         vf_loss_coeff: 0.5
         clip_param: 0.3
         kl_coeff: 0.0005
-        num_workers: 2
+        num_workers: 20
         num_gpus: 1
         model:
             free_log_std: True
-            concat_context: True
-        use_context: dynamic                        
+            concat_context: False
+        use_context:
+            grid_search: [none, none, none]                   

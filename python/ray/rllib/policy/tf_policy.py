@@ -195,7 +195,7 @@ class TFPolicy(Policy):
         else:
             self._loss = loss
         self._optimizer = self.optimizer()
-        #import pdb; pdb.set_trace()
+
         self._grads_and_vars = [
             (g, v) for (g, v) in self.gradients(self._optimizer, self._loss)
             if g is not None
@@ -431,9 +431,10 @@ class TFPolicy(Policy):
         builder.add_feed_dict(self.extra_compute_action_feed_dict())
         builder.add_feed_dict({self._obs_input: obs_batch})
         if self.config["use_context"] == "dynamic":
-            builder.add_feed_dict({self._context_input: np.array([self.context]*10)}) #{self._context_input: np.array([self.context]*10)}
+            context_inp = np.atleast_1d(self.context)
+            builder.add_feed_dict({self._context_input: np.tile(context_inp,int(self.config["model"]["concat_input_size"]/context_inp.shape[0]))}) 
         elif self.config["use_context"] == "static":
-            builder.add_feed_dict({self._context_input: np.array([1.0]*10)})
+            builder.add_feed_dict({self._context_input: np.ones(self.config["model"]["concat_input_size"])})
         if state_batches:
             builder.add_feed_dict({self._seq_lens: np.ones(len(obs_batch))})
         if self._prev_action_input is not None and prev_action_batch:
@@ -560,7 +561,6 @@ class LearningRateSchedule(object):
 
     @override(TFPolicy)
     def optimizer(self):
-        #import pdb; pdb.set_trace()
         if self.worker_index:
             return SimpleOptimizer(self.lr)
         else:

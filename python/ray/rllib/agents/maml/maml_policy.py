@@ -89,37 +89,17 @@ class PPOLoss(object):
 
         dist_cls, _ = ModelCatalog.get_action_dist(action_space, {})
         prev_dist = dist_cls(logits)
-        # Make loss functions.
         logp_ratio = tf.exp(
             curr_action_dist.logp(actions) - prev_dist.logp(actions))
-        #logp_ratio = tf.Print(logp_ratio, ["Ratio", logp_ratio])
+
         action_kl = prev_dist.kl(curr_action_dist)
         self.mean_kl = reduce_mean_valid(action_kl)
 
-        curr_entropy = curr_action_dist.entropy()
-        self.mean_entropy = reduce_mean_valid(curr_entropy)
-
         surrogate_loss = advantages * logp_ratio 
-
-        #surrogate_loss = tf.minimum(
-            #advantages * logp_ratio,
-            #advantages * tf.clip_by_value(logp_ratio, 1 - clip_param,
-                                          #1 + clip_param))
         self.mean_policy_loss = reduce_mean_valid(-surrogate_loss)
 
-        # GAE Value Function Loss
-        '''
-        vf_loss1 = tf.square(value_fn - value_targets)
-        vf_clipped = vf_preds + tf.clip_by_value(
-            value_fn - vf_preds, -vf_clip_param, vf_clip_param)
-        vf_loss2 = tf.square(vf_clipped - value_targets)
-        vf_loss = tf.maximum(vf_loss1, vf_loss2)
-        self.mean_vf_loss = reduce_mean_valid(vf_loss)
-        '''
         loss = reduce_mean_valid(
             -surrogate_loss)
-            #+ 0 * action_kl +
-            #vf_loss_coeff * vf_loss - entropy_coeff * curr_entropy)
         loss = tf.Print(loss, ["Worker Loss", loss, logits], summarize = 24)
         self.loss = loss
 
@@ -165,6 +145,7 @@ class MAMLLoss(object):
         contexts = [None]*num_tasks
         if context is not None:
             contexts = tf.split(context, self.num_tasks)
+        
         #  Construct name to tensor dictionary
         self.policy_vars = {}
         for var in policy_vars:
@@ -178,9 +159,6 @@ class MAMLLoss(object):
             pi_new_logits.append(pi_new)
             value_fns.append(value_fn)
             current_policy_vars.append(self.policy_vars)
-        #print(pi_new_logits)
-        #pi_new_logits[0] = tf.Print(pi_new_logits[0], ["Pi New Logits Meta", pi_new_logits[0]])
-        #current_policy_vars[0]["default_policy/fc1/kernel:0"] = tf.Print(current_policy_vars[0]["default_policy/fc1/kernel:0"], ["Initial Meta Weights", current_policy_vars[0]["default_policy/fc1/kernel:0"]])
 
         inner_kls = []
         inner_ppo_loss = []
@@ -206,7 +184,6 @@ class MAMLLoss(object):
                     )
 
                 adapted_policy_vars = self.compute_updated_variables(ppo_loss, current_policy_vars[i])
-                #import pdb; pdb.set_trace()
                 pi_new_logits[i], value_fns[i] = self.feed_forward(self.obs[step+1][i], adapted_policy_vars, policy_config=config["model"], context = contexts[i])
                 current_policy_vars[i] = adapted_policy_vars
                 inner_kls.append(kl_loss)
@@ -236,8 +213,7 @@ class MAMLLoss(object):
             ppo_obj.append(ppo_loss)
 
         self.loss = tf.reduce_mean(tf.stack(ppo_obj, axis=0)) + 0.0005*mean_inner_kl
-        self.loss = tf.Print(self.loss, ["Meta-Loss", self.loss], summarize=1000) #"Inner PPO Loss", inner_ppo_loss, "Post Update Weights", current_policy_vars[0]['default_policy/fc1/kernel:0']])
-        # "default_policy/hyper_film/hidden_0/kernel:0"
+        self.loss = tf.Print(self.loss, ["Meta-Loss", self.loss], summarize=1000)
 
     def PPOLoss(self,
          actions,
@@ -274,7 +250,6 @@ class MAMLLoss(object):
         pi_old_logp = prev_dist.logp(actions)
 
         logp_ratio = tf.exp(pi_new_logp - pi_old_logp)
-        #logp_ratio = tf.Print(logp_ratio, ["Log_p_ratio", logp_ratio])
         if clip_loss:
             return tf.minimum(
             advantages * logp_ratio,
@@ -300,12 +275,12 @@ class MAMLLoss(object):
     def feed_forward(self, obs, policy_vars, policy_config, context = None):
         # Hacky for now, assumes it is Fully connected network in models/fcnet.py, Conv net implemented on a later date
         # Returns pi_new_logits and value_function_prediction
-        def fc_network(inp, network_vars, hidden_nonlinearity, output_nonlinearity, hyper_vars = None, context=None):
-            hidden_sizes = (64, 64)
+        def fc_network(inp, network_vars, hidden_nonlinearity, output_nonlinearity, policy_config, hyper_vars = None, context=None):
+            hidden_sizes = policy_config["fcnet_hiddens"]
             bias_added = False
             if context is not None:
                 c = context
-            #import pdb; pdb.set_trace()
+
             if context is not None and policy_config["concat_context"]:
                 app = c[0][0:1]
                 app = tf.tile(app, tf.shape(inp)[0:1])
@@ -353,8 +328,9 @@ class MAMLLoss(object):
                         raise NameError
                     bias_added = False
             return x
+
         if context is not None:
-            context = tf.reshape(context, (-1,10))
+            context = tf.reshape(context, (-1,policy_config["concat_input_size"]))
         policyn_vars = {}
         valuen_vars = {}
         hyper_vars = {}
@@ -372,11 +348,11 @@ class MAMLLoss(object):
         output_nonlinearity = tf.identity
         hidden_nonlinearity = get_activation_fn(policy_config["fcnet_activation"])
         
-        pi_new_logits = fc_network(obs, policyn_vars, hidden_nonlinearity, output_nonlinearity, hyper_vars = hyper_vars, context=context)
+        pi_new_logits = fc_network(obs, policyn_vars, hidden_nonlinearity, output_nonlinearity, policy_config, hyper_vars = hyper_vars, context=context)
         if log_std is not None:
             pi_new_logits = tf.concat(
                 [pi_new_logits, 0.0 * pi_new_logits + log_std], 1)
-        value_fn = fc_network(obs, valuen_vars, hidden_nonlinearity, output_nonlinearity)
+        value_fn = fc_network(obs, valuen_vars, hidden_nonlinearity, output_nonlinearity, policy_config)
 
         return pi_new_logits, tf.reshape(value_fn, [-1])
 
@@ -492,10 +468,8 @@ class MAMLTFPolicy(LearningRateSchedule, MAMLPostprocessing, TFPolicy):
             prev_actions_ph = ModelCatalog.get_action_placeholder(action_space)
             prev_rewards_ph = tf.placeholder(
                 tf.float32, [None], name="prev_reward")
-            #import pdb; pdb.set_trace()
             if not self.config["use_context"] == "none":
                 context_ph = tf.placeholder(tf.float32, [None], name="context")
-                #context_ph = tf.print(context_ph, ["context_ph", context_ph])
             else:
                 context_ph = None
             existing_state_in = None
@@ -521,7 +495,7 @@ class MAMLTFPolicy(LearningRateSchedule, MAMLPostprocessing, TFPolicy):
                 "prev_rewards": prev_rewards_ph,
                 "is_training": self._get_is_training_placeholder(),
             }
-        #import pdb; pdb.set_trace()
+
         if not self.config["use_context"] == "none":
             self.loss_in.append(("context", context_ph))
             input_dict["context"] = context_ph
@@ -544,7 +518,7 @@ class MAMLTFPolicy(LearningRateSchedule, MAMLPostprocessing, TFPolicy):
             dtype=tf.float32)
 
         self.logits = self.model.outputs
-        #self.logits = tf.Print(self.logits, ["policy model out", self.logits], summarize = 24)
+
         curr_action_dist = dist_cls(self.logits)
         self.sampler = curr_action_dist.sample()
         if self.config["use_gae"]:
@@ -676,17 +650,6 @@ class MAMLTFPolicy(LearningRateSchedule, MAMLPostprocessing, TFPolicy):
 
     @override(TFPolicy)
     def gradients(self, optimizer, loss):
-        '''
-        if self.config["grad_clip"] is not None:
-            self.var_list = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
-                                              tf.get_variable_scope().name)
-            grads = tf.gradients(loss, self.var_list)
-            self.grads, _ = tf.clip_by_global_norm(grads,
-                                                   self.config["grad_clip"])
-            clipped_grads = list(zip(self.grads, self.var_list))
-            return clipped_grads
-        else:
-        '''
         grads = optimizer.compute_gradients(
             loss, colocate_gradients_with_ops=True)
         return grads

@@ -27,7 +27,7 @@ register(
 
 register(
     id='HumanoidRandDirec-v2',
-    entry_point='ray.rllib.env.ant_rand_goal:NormalizedEnv',
+    entry_point='ray.rllib.env.humanoid_rand_direc:NormalizedEnv',
     max_episode_steps=1000,
 )
 

@@ -46,6 +46,11 @@ MODEL_DEFAULTS = {
 
     # Use when context is dynamic
     "concat_context": False,
+    # Concat Input Size
+    "concat_input_size": 10,
+    #HyperNetwork Hidden Sizes
+    "hyper_hiddens": [32, 64],
+
 
     # == LSTM ==
     # Whether to wrap the model with a LSTM

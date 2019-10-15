@@ -23,34 +23,30 @@ class FullyConnectedNetwork(Model):
 
         hiddens = options.get("fcnet_hiddens")
         activation = get_activation_fn(options.get("fcnet_activation"))
+        concat_input_size = options.get("concat_input_size")
 
-        #import pdb; pdb.set_trace()
         if context is not None:
-            context = tf.reshape(context, (-1,10))
-        #import pdb; pdb.set_trace()
-        if context is not None and options.get("concat_context"):
-            app = context[0][0:1]
-            app = tf.tile(app, tf.shape(inputs)[0:1])
-            app = tf.reshape(app, [-1, 1])
-            inputs = tf.concat([inputs, app], axis =1)
+            context = tf.reshape(context, (-1,concat_input_size))
+            if options.get("concat_context"):
+                app = context[0][0:1]
+                app = tf.tile(app, tf.shape(inputs)[0:1])
+                app = tf.reshape(app, [-1, 1])
+                inputs = tf.concat([inputs, app], axis =1)
 
         if context is not None and not options.get("concat_context"):
-            #context = tf.Print(context, ["context", context],summarize=12)
             with tf.variable_scope("hyper_film"):
                 x_hyp = context
-                hyper_hidden_sizes = (32, 64)
+                hyper_hidden_sizes = options.get("hyper_hiddens")
                 for idx, hidden_size in enumerate(hyper_hidden_sizes):
                     x_hyp = tf.layers.dense(x_hyp, hidden_size, name='hidden_%d' % idx,
                         activation=activation,
-                        kernel_initializer=tf.contrib.layers.xavier_initializer(),
+                        kernel_initializer=tf.keras.initializers.glorot_normal(),
                         bias_initializer=tf.zeros_initializer())
                 x_hyp = tf.layers.dense(x_hyp, 2*sum(hiddens), name='hyper_out',
                     activation=None,
-                    kernel_initializer=tf.contrib.layers.xavier_initializer(),
+                    kernel_initializer=tf.keras.initializers.glorot_normal(),
                     bias_initializer=tf.zeros_initializer())
-                film_params = tf.split(x_hyp, [val for val in hiddens for _ in (0, 1)],axis=1)
-
-
+                film_params = tf.split(x_hyp, [val for val in hiddens for _ in (0, 1)], axis=1)
 
         with tf.name_scope("fc_net"):
             i = 1
@@ -60,7 +56,7 @@ class FullyConnectedNetwork(Model):
                 last_layer = tf.layers.dense(
                     last_layer,
                     size,
-                    kernel_initializer= tf.contrib.layers.xavier_initializer(),
+                    kernel_initializer= tf.keras.initializers.glorot_normal(),
                     bias_initializer=tf.zeros_initializer(),
                     activation=activation,
                     name=label)
@@ -71,7 +67,7 @@ class FullyConnectedNetwork(Model):
             output = tf.layers.dense(
                 last_layer,
                 num_outputs,
-                kernel_initializer=tf.contrib.layers.xavier_initializer(),
+                kernel_initializer=tf.keras.initializers.glorot_normal(),
                 bias_initializer=tf.zeros_initializer(),
                 activation=None,
                 name=label)
