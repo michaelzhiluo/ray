@@ -55,7 +55,7 @@ DEFAULT_CONFIG = with_common_config({
     # sampling tasks for performance but can waste a large portion of samples.
     "straggler_mitigation": False,
 
-    "inner_adaptation_steps": 1,
+    "inner_adaptation_steps": 2,
 
     "maml_optimizer_steps": 5,
     # dynamic, static, or none
