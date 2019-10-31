@@ -3,7 +3,7 @@ humanoid-maml:
     run: MAML
     stop:
         training_iteration: 1001
-    local_dir: /data/mluo/ant-rand-dir
+    local_dir: /data/mluo/humanoid-rand-dir
     config:
         # Sample Batch Size must equal Horizon!
         # Must Also be Complete Episdoes
@@ -20,10 +20,11 @@ humanoid-maml:
         vf_loss_coeff: 0.5
         clip_param: 0.3
         kl_coeff: 0.0005
-        num_workers: 2
+        num_workers: 40
         num_gpus: 1
         model:
             fcnet_hiddens: [128, 128]
             free_log_std: True
             concat_context: False
-        use_context: none #[none, static, dynamic, none, static, dynamic, none, static, dynamic]                  
+        use_context:
+            grid_search: [none, static, dynamic, none, static, dynamic, none, static, dynamic]                  

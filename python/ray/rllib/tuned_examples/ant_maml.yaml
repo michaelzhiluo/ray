@@ -25,4 +25,5 @@ ant-maml:
         model:
             free_log_std: True
             concat_context: False
-        use_context: [none, static, dynamic, none, static, dynamic, none, static, dynamic]                  
+        use_context: 
+            grid_search: [none, static, dynamic, none, static, dynamic, none, static, dynamic]                  
