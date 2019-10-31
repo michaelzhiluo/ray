@@ -26,6 +26,18 @@ register(
 )
 
 register(
+    id='AntRand2D-v2',
+    entry_point='ray.rllib.env.ant_rand_2d:NormalizedEnv',
+    max_episode_steps=1000,
+)
+
+register(
+    id='HumanoidRand2D-v2',
+    entry_point='ray.rllib.env.humanoid_rand_2d:NormalizedEnv',
+    max_episode_steps=1000,
+)
+
+register(
     id='HumanoidRandDirec-v2',
     entry_point='ray.rllib.env.humanoid_rand_direc:NormalizedEnv',
     max_episode_steps=1000,

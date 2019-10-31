@@ -413,7 +413,8 @@ class Trainer(Trainable):
                 self.env_creator = _global_registry.get(ENV_CREATOR, env)
             else:
                 import gym  # soft dependency
-                self.env_creator = lambda env_config: gym.make(env)
+                from metaworld.benchmarks import ML1
+                self.env_creator = lambda env_config: gym.make(env) #ML1.get_train_tasks('pick-place-v1') 
         else:
             self.env_creator = lambda env_config: None
 

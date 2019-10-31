@@ -63,6 +63,7 @@ class MAMLOptimizer(PolicyOptimizer):
             for i,e in enumerate(self.workers.remote_workers()):
                 e.set_task.remote(env_configs[i])
 
+        #import pdb; pdb.set_trace()
         # Collecting Data from Pre and Post Adaptations
         print("Sampling Data")
         with self.sample_timer:
@@ -89,14 +90,14 @@ class MAMLOptimizer(PolicyOptimizer):
                 samples = ray_get_and_free([e.sample.remote("post") for e in self.workers.remote_workers()])
                 samples = self.post_processing(samples, self.config["num_envs_per_worker"])
                 all_samples = all_samples.concat(SampleBatch.concat_samples(samples))
-
+        #import pdb; pdb.set_trace()
         context_list = []
         for i in env_configs:
             if self.config["use_context"] == "dynamic":
                 context_inp = np.atleast_1d(i)
                 context_list += [np.tile(context_inp, int(self.context_input_size/context_inp.shape[0]))]
             elif self.config["use_context"] == "static":
-                context_list+= np.ones(self.context_input_size)
+                context_list += [np.ones(self.context_input_size)]
         
         context_list = np.array(context_list).reshape([-1])
 

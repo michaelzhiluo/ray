@@ -9,7 +9,7 @@ from ray.rllib.utils import try_import_tf
 
 tf = try_import_tf()
 
-
+context_input_size = 2
 class FullyConnectedNetwork(Model):
     """Generic fully connected network."""
 
@@ -28,9 +28,9 @@ class FullyConnectedNetwork(Model):
         if context is not None:
             context = tf.reshape(context, (-1,concat_input_size))
             if options.get("concat_context"):
-                app = context[0][0:1]
+                app = context[0][0:context_input_size]
                 app = tf.tile(app, tf.shape(inputs)[0:1])
-                app = tf.reshape(app, [-1, 1])
+                app = tf.reshape(app, [-1, context_input_size])
                 inputs = tf.concat([inputs, app], axis =1)
 
         if context is not None and not options.get("concat_context"):

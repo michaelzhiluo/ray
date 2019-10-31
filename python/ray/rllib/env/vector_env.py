@@ -70,6 +70,7 @@ class VectorEnv(object):
         raise NotImplementedError
 
 
+from metaworld.benchmarks import ML1
 class _VectorizedGymEnv(VectorEnv):
     """Internal wrapper for gym envs to implement VectorEnv.
 
@@ -92,6 +93,7 @@ class _VectorizedGymEnv(VectorEnv):
         import pickle
         env_pickle = pickle.dumps(self.envs[0])
         while len(self.envs) < self.num_envs:
+            #self.envs.append(ML1.get_train_tasks('pick-place-v1'))
             self.envs.append(pickle.loads(env_pickle))
             #self.envs.append(self.make_env(len(self.envs)))
         self.action_space = action_space or self.envs[0].action_space

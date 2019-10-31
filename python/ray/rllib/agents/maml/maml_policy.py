@@ -28,7 +28,7 @@ tf = try_import_tf()
 
 # Frozen logits of the policy that computed the action
 BEHAVIOUR_LOGITS = "behaviour_logits"
-INNER_LR = 0.1
+INNER_LR = 0.01
 
 
 class PPOLoss(object):
@@ -276,15 +276,16 @@ class MAMLLoss(object):
         # Hacky for now, assumes it is Fully connected network in models/fcnet.py, Conv net implemented on a later date
         # Returns pi_new_logits and value_function_prediction
         def fc_network(inp, network_vars, hidden_nonlinearity, output_nonlinearity, policy_config, hyper_vars = None, context=None):
+            context_input_size = 2
             hidden_sizes = policy_config["fcnet_hiddens"]
             bias_added = False
             if context is not None:
                 c = context
 
             if context is not None and policy_config["concat_context"]:
-                app = c[0][0:1]
+                app = c[0][0:context_input_size]
                 app = tf.tile(app, tf.shape(inp)[0:1])
-                app = tf.reshape(app, [-1, 1])
+                app = tf.reshape(app, [-1, context_input_size])
                 inp = tf.concat([inp, app], axis =1)
 
             if context is not None and not policy_config["concat_context"]:
