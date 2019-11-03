@@ -43,6 +43,16 @@ register(
     max_episode_steps=1000,
 )
 
+register(
+    id='Walker2DRandParams-v0',
+    entry_point='rand_param_envs.walker2d_rand_params:Walker2DRandParamsEnv',
+)
+
+register(
+    id='HopperRandParams-v0',
+    entry_point='rand_param_envs.hopper_rand_params:HopperRandParamsEnv',
+)
+
 __all__ = [
     "BaseEnv", "MultiAgentEnv", "ExternalEnv", "VectorEnv", "ServingEnv",
     "EnvContext"
