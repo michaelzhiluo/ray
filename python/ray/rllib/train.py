@@ -136,6 +136,7 @@ def run(args, parser):
         ray.init(redis_address=cluster.redis_address)
     else:
         ray.init(
+            # temp_dir = "/data/mluo/tmp",
             redis_address=args.redis_address,
             object_store_memory=args.ray_object_store_memory,
             redis_max_memory=args.ray_redis_max_memory,

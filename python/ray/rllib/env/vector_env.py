@@ -4,6 +4,7 @@ from __future__ import print_function
 
 import logging
 import numpy as np
+import time 
 
 from ray.rllib.utils.annotations import override, PublicAPI
 
@@ -105,10 +106,18 @@ class _VectorizedGymEnv(VectorEnv):
 
     @override(VectorEnv)
     def vector_step(self, actions):
+        # print(actions)
         obs_batch, rew_batch, done_batch, info_batch = [], [], [], []
         for i in range(self.num_envs):
+            time.sleep(0.0002)
             obs, r, done, info = self.envs[i].step(actions[i])
+            if np.isnan(obs).any() == True:
+                print('nan')
+                asd
             #print(r)
+            # print()
+            # print(obs)
+
             if not np.isscalar(r) or not np.isreal(r) or not np.isfinite(r):
                 raise ValueError(
                     "Reward should be finite scalar, got {} ({})".format(

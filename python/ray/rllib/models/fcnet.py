@@ -21,6 +21,7 @@ class FullyConnectedNetwork(Model):
         model that processes the components separately, use _build_layers_v2().
         """
         #import pdb; pdb.set_trace()
+        # inputs = tf.Print(inputs, ['inputs', inputs], summarize=1000)
         hiddens = options.get("fcnet_hiddens")
         activation = get_activation_fn(options.get("fcnet_activation"))
         #activation = tf.nn.relu6
@@ -45,6 +46,7 @@ class FullyConnectedNetwork(Model):
                     kernel_initializer=normc_initializer(1.0),
                     activation=activation,
                     name=label)
+                # last_layer = tf.Print(last_layer, ['last_layer', last_layer])
                 i += 1
 
             output = tf.layers.dense(
@@ -53,10 +55,14 @@ class FullyConnectedNetwork(Model):
                 kernel_initializer=normc_initializer(0.01),
                 activation=None,
                 name="fc_out")
+            
+            # output = tf.Print(output, ['output1:', output])
             #import pdb; pdb.set_trace()
             if not self.is_value_fn:
                 mean, std = tf.split(output, 2, axis=1)
-                mean = tf.nn.tanh(mean)*1.0
+                # mean = tf.nn.tanh(mean)*1.0
                 std = tf.nn.softplus(std)
+                # std = tf.clip_by_value(std, -20, 2)
                 output = tf.concat([mean, std], axis=1)
+            # output = tf.Print(output, ['output2:', output])
             return output, last_layer

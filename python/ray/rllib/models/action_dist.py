@@ -163,16 +163,30 @@ class DiagGaussian(ActionDistribution):
         self.mean = mean
         self.std = log_std
         self.log_std = tf.log(log_std)
-        #self.log_std = log_std
-        #self.std = tf.exp(log_std)
+        # self.log_std = log_std
+        # self.std = tf.exp(log_std)
         ActionDistribution.__init__(self, inputs)
 
     @override(ActionDistribution)
     def logp(self, x):
+        # x = tf.Print(x, ['x', x])
+
+        y = tf.atanh(x)
+        # y = 
+        # print(y.shape)
+        # y = tf.Print(y, ['y', y])
         return (-0.5 * tf.reduce_sum(
-            tf.square((x - self.mean) / self.std), reduction_indices=[1]) -
-                0.5 * np.log(2.0 * np.pi) * tf.to_float(tf.shape(x)[1]) -
-                tf.reduce_sum(self.log_std, reduction_indices=[1]))
+            tf.square((y - self.mean) / self.std), reduction_indices=[1]) -
+                0.5 * np.log(2.0 * np.pi) * tf.to_float(tf.shape(y)[1]) -
+                tf.reduce_sum(self.log_std, reduction_indices=[1])) + tf.reduce_sum(2. * (np.log(2.) - y - tf.nn.softplus(-2. * y)), reduction_indices=[1])
+        # print(x.shape)
+        # print(z.shape)
+        # z = tf.Print(z, ['z', z.shape])
+        # return (-0.5 * tf.reduce_sum(
+        #     tf.square((x - self.mean) / self.std), reduction_indices=[1]) -
+        #         0.5 * np.log(2.0 * np.pi) * tf.to_float(tf.shape(x)[1]) -
+        #         tf.reduce_sum(self.log_std, reduction_indices=[1]))
+        # return z
 
     @override(ActionDistribution)
     def kl(self, other):
@@ -191,7 +205,7 @@ class DiagGaussian(ActionDistribution):
 
     @override(ActionDistribution)
     def _build_sample_op(self):
-        return tf.clip_by_value(self.mean + self.std * tf.random_normal(tf.shape(self.mean)), -1.0, 1.0)
+        return tf.tanh(self.mean + self.std * tf.random_normal(tf.shape(self.mean)) )
         #return self.mean + self.std * tf.random_normal(tf.shape(self.mean))
 
 

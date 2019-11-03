@@ -159,9 +159,11 @@ def build_vtrace_loss(policy, batch_tensors):
         return _make_time_major(policy, *args, **kw)
 
     actions = batch_tensors[SampleBatch.ACTIONS]
+    actions = tf.Print(actions, ['actions', actions])
     dones = batch_tensors[SampleBatch.DONES]
     rewards = batch_tensors[SampleBatch.REWARDS]
     behaviour_logits = batch_tensors[BEHAVIOUR_LOGITS]
+    # behaviour_logits = tf.Print(behaviour_logits, ['logit', behaviour_logits])
     unpacked_behaviour_logits = tf.split(
         behaviour_logits, output_hidden_shape, axis=1)
     policy.model_out = tf.Print(policy.model_out, ["policy model out", policy.model_out], summarize = 20)
@@ -255,6 +257,9 @@ def choose_optimizer(policy, config):
 
 
 def clip_gradients(policy, optimizer, loss):
+    coeff = 1e-4
+    for var in policy.var_list:
+        loss += coeff*tf.nn.l2_loss(var)
     grads = tf.gradients(loss, policy.var_list)
     policy.grads, _ = tf.clip_by_global_norm(grads, policy.config["grad_clip"])
     clipped_grads = list(zip(policy.grads, policy.var_list))
