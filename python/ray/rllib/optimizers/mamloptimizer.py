@@ -67,11 +67,12 @@ class MAMLOptimizer(PolicyOptimizer):
         # Collecting Data from Pre and Post Adaptations
         print("Sampling Data")
         with self.sample_timer:
-
+            meta_split = []
             # Pre Adaptation Sampling from Workers
             samples = ray_get_and_free([e.sample.remote("pre") for i,e in enumerate(self.workers.remote_workers())])
-            samples = self.post_processing(samples, self.config["num_envs_per_worker"])
+            samples, split_list = self.post_processing(samples, self.config["num_envs_per_worker"])
             all_samples = SampleBatch.concat_samples(samples)
+            meta_split.append(split_list)
 
             # Data Collection for Meta-Update Step (which will be done on Master Learner)
             for step in range(self.inner_adaptation_steps):
@@ -88,9 +89,9 @@ class MAMLOptimizer(PolicyOptimizer):
                 
                 print("Sampling Data")
                 samples = ray_get_and_free([e.sample.remote("post") for e in self.workers.remote_workers()])
-                samples = self.post_processing(samples, self.config["num_envs_per_worker"])
+                samples, split_list = self.post_processing(samples, self.config["num_envs_per_worker"])
                 all_samples = all_samples.concat(SampleBatch.concat_samples(samples))
-        #import pdb; pdb.set_trace()
+                meta_split.append(split_list)
         context_list = []
         for i in env_configs:
             if self.config["use_context"] == "dynamic":
@@ -109,8 +110,11 @@ class MAMLOptimizer(PolicyOptimizer):
         # Should the whole computation graph be in master?
         print("Meta Update")
         with self.meta_grad_timer:
+            all_samples["split"] = np.array(meta_split)
             for i in range(self.maml_optimizer_steps):
                 fetches = self.workers.local_worker().learn_on_batch(all_samples)
+                print(meta_split)
+                #import pdb; pdb.set_trace()
             self.learner_stats = get_learner_stats(fetches)
 
         self.num_steps_sampled += all_samples.count
@@ -119,17 +123,22 @@ class MAMLOptimizer(PolicyOptimizer):
         return self.learner_stats
 
     def post_processing(self, samples, num_envs_per_worker):
+        split_list = []
         for sample in samples:
-            reward_list = np.split(sample['rewards'], num_envs_per_worker)
-            observation_list = np.split(sample['obs'], num_envs_per_worker)
+            split_list.append(sample['obs'].shape[0])
+            indexes = np.where(sample['dones']==True)[0]
+            indexes = indexes+1
+
+            reward_list = np.split(sample['rewards'], indexes)[:-1]
+            observation_list = np.split(sample['obs'], indexes)[:-1]
 
             temp_list = []
-            for i in range(0, num_envs_per_worker):
+            for i in range(0, len(reward_list)):
                 temp_list.append({"rewards": reward_list[i], "observations": observation_list[i]})
             
             advantages = self._compute_samples_data(temp_list)
             sample["advantages"] = advantages
-        return samples
+        return samples, split_list
 
 
     def _compute_samples_data(self, paths):

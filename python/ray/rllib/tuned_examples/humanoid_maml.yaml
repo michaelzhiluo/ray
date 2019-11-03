@@ -3,7 +3,7 @@ humanoid-maml:
     run: MAML
     stop:
         training_iteration: 1001
-    local_dir: /data/mluo/humanoid-rand-dir
+    local_dir: /data/mluo/humanoid-rand-2d
     config:
         # Sample Batch Size must equal Horizon!
         # Must Also be Complete Episdoes

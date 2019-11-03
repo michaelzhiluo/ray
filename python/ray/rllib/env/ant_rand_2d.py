@@ -110,7 +110,7 @@ class AntRandDirec2DEnv(MujocoEnv, gym.utils.EzPickle):
         reward = forward_reward - ctrl_cost - contact_cost + survive_reward
         state = self.state_vector()
         notdone = np.isfinite(state).all() and 1.0 >= state[2] >= 0.
-        done = not notdone
+        done = False #not notdone
         ob = self._get_obs()
         return ob, reward, done, dict(
             reward_forward=forward_reward,

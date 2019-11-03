@@ -498,6 +498,8 @@ class TFPolicy(Policy):
         # Simple case: not RNN nor do we need to pad
         if not self._state_inputs and meets_divisibility_reqs:
             for k, ph in self._loss_inputs:
+                if k=="split" and k not in batch:
+                    continue
                 feed_dict[ph] = batch[k]
             return feed_dict
 

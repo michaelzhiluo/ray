@@ -28,7 +28,7 @@ tf = try_import_tf()
 
 # Frozen logits of the policy that computed the action
 BEHAVIOUR_LOGITS = "behaviour_logits"
-INNER_LR = 0.01
+INNER_LR = 0.1
 
 
 class PPOLoss(object):
@@ -119,6 +119,7 @@ class MAMLLoss(object):
             policy_vars, 
             obs, 
             num_tasks,
+            split,
             inner_adaptation_steps=1,
             entropy_coeff=0,
             clip_param=0.3,
@@ -134,14 +135,14 @@ class MAMLLoss(object):
         self.cur_kl_coeff = cur_kl_coeff
 
         # Split episode tensors into [inner_adaptation_steps+1, num_tasks, -1]
-        self.obs = self.split_placeholders(obs)
-        self.actions = self.split_placeholders(actions)
-        self.behaviour_logits = self.split_placeholders(behaviour_logits)
-        self.advantages = self.split_placeholders(advantages)
-        self.value_targets = self.split_placeholders(value_targets)
-        self.vf_preds = self.split_placeholders(vf_preds)
-        self.valid_mask = self.split_placeholders(valid_mask)
-        pi_new_init = self.split_placeholders(model.outputs)
+        self.obs = self.split_placeholders(obs, split)
+        self.actions = self.split_placeholders(actions, split)
+        self.behaviour_logits = self.split_placeholders(behaviour_logits, split)
+        self.advantages = self.split_placeholders(advantages, split)
+        self.value_targets = self.split_placeholders(value_targets, split)
+        self.vf_preds = self.split_placeholders(vf_preds, split)
+        self.valid_mask = self.split_placeholders(valid_mask, split)
+        pi_new_init = self.split_placeholders(model.outputs, split)
         contexts = [None]*num_tasks
         if context is not None:
             contexts = tf.split(context, self.num_tasks)
@@ -213,7 +214,7 @@ class MAMLLoss(object):
             ppo_obj.append(ppo_loss)
 
         self.loss = tf.reduce_mean(tf.stack(ppo_obj, axis=0)) + 0.0005*mean_inner_kl
-        self.loss = tf.Print(self.loss, ["Meta-Loss", self.loss], summarize=1000)
+        self.loss = tf.Print(self.loss, ["Meta-Loss", self.loss, tf.shape(self.obs[0][0]), tf.shape(self.obs[0][1]), tf.shape(self.obs[0][2]), tf.shape(self.obs[1][0]), tf.shape(self.obs[1][1]),tf.shape(self.obs[1][2])], summarize=1000)
 
     def PPOLoss(self,
          actions,
@@ -369,11 +370,17 @@ class MAMLLoss(object):
                 adapted_vars[name] = var - 0.1*grad[i] #tf.multiply(self.step_sizes[name], grad[i])
         return adapted_vars
 
-    def split_placeholders(self, placeholder):
+    def split_placeholders(self, placeholder, split):
+        inner_placeholder_list = tf.split(placeholder, tf.math.reduce_sum(split, axis=1), axis=0)
+        placeholder_list = []
+        for index, split_placeholder in enumerate(inner_placeholder_list):
+            placeholder_list.append(tf.split(split_placeholder, split[index], axis=0))
+        '''
         inner_placeholder_list = tf.split(placeholder, self.inner_adaptation_steps+1, axis=0)
         placeholder_list = []
         for split_placeholder in inner_placeholder_list:
             placeholder_list.append(tf.split(split_placeholder, self.num_tasks, axis=0))
+        '''
         return placeholder_list
 
     def _create_step_size_vars(self):
@@ -469,6 +476,7 @@ class MAMLTFPolicy(LearningRateSchedule, MAMLPostprocessing, TFPolicy):
             prev_actions_ph = ModelCatalog.get_action_placeholder(action_space)
             prev_rewards_ph = tf.placeholder(
                 tf.float32, [None], name="prev_reward")
+            split_ph = tf.placeholder(tf.int32, name="Meta-Update-Splitting", shape=(self.config["inner_adaptation_steps"]+1, self.config["num_workers"]))
             if not self.config["use_context"] == "none":
                 context_ph = tf.placeholder(tf.float32, [None], name="context")
             else:
@@ -497,6 +505,7 @@ class MAMLTFPolicy(LearningRateSchedule, MAMLPostprocessing, TFPolicy):
                 "is_training": self._get_is_training_placeholder(),
             }
 
+        self.loss_in.append(("split", split_ph))
         if not self.config["use_context"] == "none":
             self.loss_in.append(("context", context_ph))
             input_dict["context"] = context_ph
@@ -593,6 +602,7 @@ class MAMLTFPolicy(LearningRateSchedule, MAMLPostprocessing, TFPolicy):
                 policy_vars = self.var_list, 
                 obs = obs_ph,  
                 num_tasks = self.config["num_workers"],
+                split = split_ph,
                 inner_adaptation_steps=1,
                 entropy_coeff=self.config["entropy_coeff"],
                 clip_param=self.config["clip_param"],
