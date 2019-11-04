@@ -63,6 +63,10 @@ class MAMLOptimizer(PolicyOptimizer):
             for i,e in enumerate(self.workers.remote_workers()):
                 e.set_task.remote(env_configs[i])
 
+        env_configs = self.preprocess_context(env_configs)
+
+        #import pdb; pdb.set_trace()
+
         #import pdb; pdb.set_trace()
         # Collecting Data from Pre and Post Adaptations
         print("Sampling Data")
@@ -121,6 +125,12 @@ class MAMLOptimizer(PolicyOptimizer):
         self.num_steps_trained += all_samples.count
 
         return self.learner_stats
+
+    def preprocess_context(self, env_configs):
+        if isinstance(env_configs[0], dict):
+            for i, config in enumerate(env_configs):
+                env_configs[i] = np.concatenate([v.flatten() for v in config.values()])
+        return env_configs
 
     def post_processing(self, samples, num_envs_per_worker):
         split_list = []

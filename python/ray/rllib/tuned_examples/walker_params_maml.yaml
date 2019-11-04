@@ -1,9 +1,9 @@
-hopper-params-maml:
-    env: HopperRandParams-v0
+walker-params-maml:
+    env: Walker2DRandParams-v0
     run: MAML
     stop:
         training_iteration: 1001
-    local_dir: /data/mluo/hopper_rand_params
+    local_dir: /data/mluo/delete-this #hopper_rand_params
     config:
         # Sample Batch Size must equal Horizon!
         # Must Also be Complete Episdoes
@@ -20,11 +20,11 @@ hopper-params-maml:
         vf_loss_coeff: 0.5
         clip_param: 0.3
         kl_coeff: 0.0005
-        num_workers: 40
+        num_workers: 3
         num_gpus: 1
         model:
             free_log_std: True
-            concat_context: True
+            concat_context: False
             concat_input_size: 41
-        use_context: 
-            grid_search: [none, static, dynamic, none, static, dynamic, none, static, dynamic]                  
+        use_context: none
+            #grid_search: [none, static, dynamic, none, static, dynamic, none, static, dynamic]                  

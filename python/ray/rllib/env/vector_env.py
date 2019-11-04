@@ -4,7 +4,7 @@ from __future__ import print_function
 
 import logging
 import numpy as np
-
+import time
 from ray.rllib.utils.annotations import override, PublicAPI
 
 logger = logging.getLogger(__name__)
