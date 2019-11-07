@@ -5,6 +5,7 @@ from __future__ import print_function
 import gym
 import logging
 import pickle
+import numpy as np
 
 import ray
 from ray.rllib.env.atari_wrappers import wrap_deepmind, is_atari
@@ -413,14 +414,19 @@ class RolloutWorker(EvaluatorInterface):
                 self.async_env, self.env, self.policy_map))
 
     def sample_tasks(self, n_tasks):
-        return self.async_env.vector_env.envs[0].env.sample_tasks(n_tasks)
+        return self.async_env.vector_env.envs[0].sample_tasks(n_tasks)
 
     def set_task(self, task):
         if not self.policy_config["use_context"] == "none":
-            self.policy_map['default_policy'].context = task
+            self.policy_map['default_policy'].context = self.preprocess_context(task)
             self.context = task
         for env in self.async_env.vector_env.envs:
-            env.env.set_task(task)
+            env.set_task(task)
+
+    def preprocess_context(self, task):
+        if isinstance(task, dict):
+            return np.concatenate([v.flatten() for v in task.values()])
+        return task
 
     @override(EvaluatorInterface)
     def sample(self):

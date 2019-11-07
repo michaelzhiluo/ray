@@ -45,12 +45,12 @@ register(
 
 register(
     id='Walker2DRandParams-v0',
-    entry_point='rand_param_envs.walker2d_rand_params:Walker2DRandParamsEnv',
+    entry_point='ray.rllib.env.walker_random_params:NormalizedEnv',
 )
 
 register(
     id='HopperRandParams-v0',
-    entry_point='rand_param_envs.hopper_rand_params:HopperRandParamsEnv',
+    entry_point='ray.rllib.env.hopper_random_params:NormalizedEnv',
 )
 
 __all__ = [

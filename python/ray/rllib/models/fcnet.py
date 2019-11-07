@@ -9,7 +9,7 @@ from ray.rllib.utils import try_import_tf
 
 tf = try_import_tf()
 
-context_input_size = 2
+context_input_size = 65
 class FullyConnectedNetwork(Model):
     """Generic fully connected network."""
 
