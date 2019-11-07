@@ -24,6 +24,7 @@ hopper-params-maml:
         num_gpus: 1
         model:
             free_log_std: True
-            concat_context: False
-        use_context:
+            concat_context: True
+            concat_input_size: 41
+        use_context: 
             grid_search: [none, static, dynamic, none, static, dynamic, none, static, dynamic]                  

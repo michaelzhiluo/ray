@@ -277,7 +277,11 @@ class MAMLLoss(object):
         # Hacky for now, assumes it is Fully connected network in models/fcnet.py, Conv net implemented on a later date
         # Returns pi_new_logits and value_function_prediction
         def fc_network(inp, network_vars, hidden_nonlinearity, output_nonlinearity, policy_config, hyper_vars = None, context=None):
+<<<<<<< HEAD
             context_input_size = 65
+=======
+            context_input_size = 41
+>>>>>>> df886539c0d1f46976790e724c6cdb5e7f596ee2
             hidden_sizes = policy_config["fcnet_hiddens"]
             bias_added = False
             if context is not None:

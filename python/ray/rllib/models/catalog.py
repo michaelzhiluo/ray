@@ -83,7 +83,7 @@ MODEL_DEFAULTS = {
 # __sphinx_doc_end__
 # yapf: enable
 
-
+import rand_param_envs
 @PublicAPI
 class ModelCatalog(object):
     """Registry of models, preprocessors, and action distributions for envs.
@@ -116,7 +116,7 @@ class ModelCatalog(object):
         """
 
         config = config or MODEL_DEFAULTS
-        if isinstance(action_space, gym.spaces.Box):
+        if isinstance(action_space, gym.spaces.Box) or isinstance(action_space, rand_param_envs.gym.spaces.Box):
             if len(action_space.shape) > 1:
                 raise ValueError(
                     "Action space has multiple dimensions "
@@ -174,7 +174,7 @@ class ModelCatalog(object):
             action_placeholder (Tensor): A placeholder for the actions
         """
 
-        if isinstance(action_space, gym.spaces.Box):
+        if isinstance(action_space, gym.spaces.Box) or isinstance(action_space, rand_param_envs.gym.spaces.Box):
             return tf.placeholder(
                 tf.float32, shape=(None, action_space.shape[0]), name="action")
         elif isinstance(action_space, gym.spaces.Discrete):
