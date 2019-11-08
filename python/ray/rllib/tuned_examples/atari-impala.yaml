@@ -3,10 +3,10 @@
 atari-impala:
     env:
         grid_search:
-            - BreakoutNoFrameskip-v4
-            - BeamRiderNoFrameskip-v4
+              #- BreakoutNoFrameskip-v4
+              #- BeamRiderNoFrameskip-v4
             - QbertNoFrameskip-v4
-            - SpaceInvadersNoFrameskip-v4 
+              #- SpaceInvadersNoFrameskip-v4 
     run: IMPALA
     config:
         sample_batch_size: 50
