@@ -67,12 +67,12 @@ def make_aggregators_and_optimizer(workers, config):
     else:
         aggregators = None
     workers.add_workers(config["num_workers"])
-    old_worker = workers._make_worker(
-                RolloutWorker, workers._env_creator, workers._policy, 0, workers._local_config)
+    #old_worker = workers._make_worker(
+                #RolloutWorker, workers._env_creator, workers._policy, 0, workers._local_config)
 
     optimizer = AsyncSamplesOptimizer(
         workers,
-        old_worker=old_worker,
+        #old_worker=old_worker,
         lr=config["lr"],
         use_kl_loss=config["use_kl_loss"],
         num_envs_per_worker=config["num_envs_per_worker"],
@@ -96,9 +96,14 @@ def make_aggregators_and_optimizer(workers, config):
         optimizer.aggregator.init(aggregators)
     return optimizer
 
+def initialize_target(trainer):
+    trainer.workers.local_worker().foreach_trainable_policy(
+        lambda p, _: p.update_target())
+
 APPOTrainer = impala.ImpalaTrainer.with_updates(
     name="APPO",
     default_config=DEFAULT_CONFIG,
     default_policy=AsyncPPOTFPolicy,
     get_policy_class=lambda _: AsyncPPOTFPolicy,
+    after_init=initialize_target,
     make_policy_optimizer=make_aggregators_and_optimizer)

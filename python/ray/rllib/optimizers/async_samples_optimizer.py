@@ -29,7 +29,6 @@ class AsyncSamplesOptimizer(PolicyOptimizer):
 
     def __init__(self,
                  workers,
-                 old_worker = None,
                  train_batch_size=500,
                  sample_batch_size=50,
                  num_envs_per_worker=1,
@@ -46,7 +45,8 @@ class AsyncSamplesOptimizer(PolicyOptimizer):
                  learner_queue_size=16,
                  num_aggregation_workers=0,
                  _fake_gpus=False,
-                 old_policy_lag=512):
+                 old_policy_lag=1,
+                 is_appo=False):
         PolicyOptimizer.__init__(self, workers)
 
         self._stats_start_time = time.time()
@@ -63,8 +63,8 @@ class AsyncSamplesOptimizer(PolicyOptimizer):
                     "parallel data loader buffers as minibatch buffers: "
                     "{} vs {}".format(num_data_loader_buffers,
                                       minibatch_buffer_size))
-            if old_worker:
-                raise ValueError("APPO has not been implemented for multi-GPU mode")
+            #if old_worker:
+                #raise ValueError("APPO has not been implemented for multi-GPU mode")
 
             self.learner = TFMultiGPULearner(
                 self.workers.local_worker(),
@@ -77,12 +77,13 @@ class AsyncSamplesOptimizer(PolicyOptimizer):
                 learner_queue_size=learner_queue_size,
                 _fake_gpus=_fake_gpus)
         else:
-            if old_worker:
-                weights = self.workers.local_worker().get_weights()
-                old_worker.set_weights(weights)
+            #if old_worker:
+                #weights = self.workers.local_worker().get_weights()
+                #old_worker.set_weights(weights)
             self.learner = LearnerThread(self.workers.local_worker(),
                                          minibatch_buffer_size, num_sgd_iter,
-                                         learner_queue_size, old_worker=old_worker, use_kl_loss=use_kl_loss, old_policy_lag=old_policy_lag)
+                                         learner_queue_size, is_appo = is_appo, 
+                                         use_kl_loss=use_kl_loss, old_policy_lag=old_policy_lag)
         self.learner.start()
 
         # Stats

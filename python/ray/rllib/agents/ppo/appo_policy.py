@@ -21,6 +21,7 @@ from ray.rllib.utils import try_import_tf
 from ray.rllib.policy.tf_policy_template import build_tf_policy
 from ray.rllib.policy.tf_policy import LearningRateSchedule
 from ray.rllib.agents.ppo.ppo_policy import KLCoeffMixin
+from ray.rllib.models import ModelCatalog
 from ray.rllib.utils.explained_variance import explained_variance
 
 tf = try_import_tf()
@@ -28,6 +29,8 @@ tf = try_import_tf()
 logger = logging.getLogger(__name__)
 
 BEHAVIOUR_LOGITS = "behaviour_logits"
+TARGET_POLICY_SCOPE = "target_func"
+POLICY_SCOPE = "func"
 
 # Classic PPO Loss, no changes made to loss function
 class PPOSurrogateLoss(object):
@@ -180,6 +183,25 @@ class VTraceSurrogateLoss(object):
         if use_kl_loss:
             self.total_loss+=cur_kl_coeff*self.mean_kl
 
+def build_appo_model(policy, obs_space, action_space, config):
+    policy.model = ModelCatalog.get_model_v2(
+        obs_space,
+        action_space,
+        policy.logit_dim,
+        config["model"],
+        name=POLICY_SCOPE,
+        framework="tf")
+
+    policy.target_model = ModelCatalog.get_model_v2(
+        obs_space,
+        action_space,
+        policy.logit_dim,
+        config["model"],
+        name=TARGET_POLICY_SCOPE,
+        framework="tf")
+
+    return policy.model
+
 
 def build_appo_surrogate_loss(policy, batch_tensors):
     if isinstance(policy.action_space, gym.spaces.Discrete):
@@ -199,9 +221,11 @@ def build_appo_surrogate_loss(policy, batch_tensors):
     actions = batch_tensors[SampleBatch.ACTIONS]
     dones = batch_tensors[SampleBatch.DONES]
     rewards = batch_tensors[SampleBatch.REWARDS]
-    
     behaviour_logits = batch_tensors[BEHAVIOUR_LOGITS]
-    old_policy_behaviour_logits = batch_tensors["old_policy_behaviour_logits"]
+
+    policy.target_model_out, _ = policy.target_model(
+        policy.input_dict, policy.state_in, policy.seq_lens)
+    old_policy_behaviour_logits = tf.stop_gradient(policy.target_model_out)
     
     unpacked_behaviour_logits = tf.split(
         behaviour_logits, output_hidden_shape, axis=1)
@@ -212,7 +236,11 @@ def build_appo_surrogate_loss(policy, batch_tensors):
     old_policy_action_dist = policy.dist_class(old_policy_behaviour_logits)
     prev_action_dist = policy.dist_class(behaviour_logits)
     values = policy.value_function
-
+    #policy.model_out = tf.Print(policy.model_out, ["policy model out", policy.model_out], summarize = 20)
+    policy.model_vars = policy.model.variables()
+    policy.target_model_vars = policy.target_model.variables()
+    print(policy.model_vars)
+    print(policy.target_model_vars)
     if policy.state_in:
         max_seq_len = tf.reduce_max(policy.seq_lens) - 1
         mask = tf.sequence_mask(policy.seq_lens, max_seq_len)
@@ -343,8 +371,9 @@ def add_values_and_logits(policy):
     return out
 
 def validate_config(policy, obs_space, action_space, config):
-    assert config["batch_mode"] == "truncate_episodes", \
-        "Must use `truncate_episodes` batch mode with V-trace."
+    if config["vtrace"]:
+        assert config["batch_mode"] == "truncate_episodes", \
+            "Must use `truncate_episodes` batch mode with V-trace."
 
 
 def choose_optimizer(policy, config):
@@ -359,22 +388,6 @@ def clip_gradients(policy, optimizer, loss):
     policy.grads, _ = tf.clip_by_global_norm(grads, policy.config["grad_clip"])
     clipped_grads = list(zip(policy.grads, policy.var_list))
     return clipped_grads
-    def __init__(self):
-        self.value_function = self.model.value_function()
-        self.var_list = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
-                                          tf.get_variable_scope().name)
-
-    def value(self, ob, *args):
-        feed_dict = {
-            self.get_placeholder(SampleBatch.CUR_OBS): [ob],
-            self.model.seq_lens: [1]
-        }
-        assert len(args) == len(self.model.state_in), \
-            (args, self.model.state_in)
-        for k, v in zip(self.model.state_in, args):
-            feed_dict[k] = v
-        vf = self.get_session().run(self.value_function, feed_dict)
-        return vf[0]
 
 class ValueNetworkMixin(object):
     def __init__(self):
@@ -394,13 +407,34 @@ class ValueNetworkMixin(object):
         vf = self.get_session().run(self.value_function, feed_dict)
         return vf[0]
 
+class TargetNetworkMixin(object):
+    def __init__(self, obs_space, action_space, config):
+        """Target Network is updated by the master learner every
+        trainer.update_target_frequency steps. All worker batches
+        are importance sampled w.r. to the target network to ensure
+        a more stable pi_old in PPO.
+        """
+        assign_ops = []
+        assert len(self.model_vars) == len(self.target_model_vars)
+        for var, var_target in zip(self.model_vars, self.target_model_vars):
+            assign_ops.append(var_target.assign(var))
+        self.update_target_network = tf.group(*assign_ops)
+
+    def update_target(self):
+        return self.get_session().run(self.update_target_network)
+
 def setup_mixins(policy, obs_space, action_space, config):
     LearningRateSchedule.__init__(policy, config["lr"], config["lr_schedule"])
     KLCoeffMixin.__init__(policy, config)
     ValueNetworkMixin.__init__(policy)
 
+def setup_late_mixins(policy, obs_space, action_space, config):
+    TargetNetworkMixin.__init__(policy, obs_space, action_space, config)
+
 AsyncPPOTFPolicy = build_tf_policy(
     name="AsyncPPOTFPolicy",
+    #get_default_config=lambda: ray.rllib.agents.ppo.appo.DEFAULT_CONFIG,
+    make_model = build_appo_model,        
     loss_fn=build_appo_surrogate_loss,
     stats_fn=stats,
     grad_stats_fn=grad_stats,
@@ -410,5 +444,6 @@ AsyncPPOTFPolicy = build_tf_policy(
     extra_action_fetches_fn=add_values_and_logits,
     before_init=validate_config,
     before_loss_init=setup_mixins,
-    mixins=[LearningRateSchedule, KLCoeffMixin, ValueNetworkMixin],
+    after_init=setup_late_mixins,
+    mixins=[LearningRateSchedule, KLCoeffMixin, ValueNetworkMixin, TargetNetworkMixin],
     get_batch_divisibility_req=lambda p: p.config["sample_batch_size"])

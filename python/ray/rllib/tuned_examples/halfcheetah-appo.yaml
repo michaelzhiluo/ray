@@ -3,12 +3,11 @@
 halfcheetah-appo:
     env: HalfCheetah-v2
     run: APPO
-    local_dir: ~/halfcheetah-appo-results
+    local_dir: ~/delete-this
     stop:
         time_total_s: 10800 
     config:
-        vtrace:
-            grid_search: [True, True, True, True, True]
+        vtrace: True
         gamma: 0.99
         lambda: 0.95
         sample_batch_size: 512
