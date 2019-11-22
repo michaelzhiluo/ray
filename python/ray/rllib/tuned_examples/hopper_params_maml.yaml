@@ -26,5 +26,7 @@ hopper-params-maml:
             free_log_std: True
             concat_context: True
             concat_input_size: 41
+            context_input_size: 41
+        inner_lr: 0.05
         use_context: 
             grid_search: [none, static, dynamic, none, static, dynamic, none, static, dynamic]                  

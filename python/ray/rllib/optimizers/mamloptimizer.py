@@ -64,10 +64,6 @@ class MAMLOptimizer(PolicyOptimizer):
                 e.set_task.remote(env_configs[i])
 
         env_configs = self.preprocess_context(env_configs)
-
-        #import pdb; pdb.set_trace()
-
-        #import pdb; pdb.set_trace()
         # Collecting Data from Pre and Post Adaptations
         print("Sampling Data")
         with self.sample_timer:

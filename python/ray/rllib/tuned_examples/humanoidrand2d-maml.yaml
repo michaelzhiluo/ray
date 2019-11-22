@@ -1,14 +1,14 @@
-ant-maml:
-    env: AntRand2D-v2
+humanoid-maml:
+    env: HumanoidRand2D-v2
     run: MAML
     stop:
-        training_iteration: 1001
-    local_dir: /data/mluo/ant-random-2d
+        training_iteration: 501
+    local_dir: /data/mluo/humanoid-rand-2d
     config:
         # Sample Batch Size must equal Horizon!
         # Must Also be Complete Episdoes
-        horizon: 100
-        sample_batch_size: 100
+        horizon: 200
+        sample_batch_size: 200
         num_envs_per_worker: 20
         batch_mode: complete_episodes
 
@@ -23,7 +23,11 @@ ant-maml:
         num_workers: 40
         num_gpus: 1
         model:
+            fcnet_hiddens: [128, 128]
+            concat_input_size: 10
+            context_input_size: 2
+            hyper_hiddens: [64, 64, 64]
             free_log_std: True
-            concat_context: False
-        use_context:
-            grid_search: [none, static, dynamic, none, static, dynamic, none, static, dynamic]                  
+            concat_context: True
+        inner_lr: 0.1
+        use_context: dynamic            

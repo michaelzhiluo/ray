@@ -44,10 +44,13 @@ MODEL_DEFAULTS = {
     # (deprecated) Whether to use sigmoid to squash actions to space range
     "squash_to_range": False,
 
+    #=========CONTEXT Hyperparameters=========#
     # Use when context is dynamic
     "concat_context": False,
-    # Concat Input Size
+    # Concat Input Size (Should be scalar multiple of concat_input_size)
     "concat_input_size": 10,
+    # Task Vector Size
+    "context_input_size": 2,
     #HyperNetwork Hidden Sizes
     "hyper_hiddens": [32, 64],
 

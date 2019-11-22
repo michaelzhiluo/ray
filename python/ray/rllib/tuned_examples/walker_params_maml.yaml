@@ -26,5 +26,7 @@ walker-params-maml:
             free_log_std: True
             concat_context: False
             concat_input_size: 65
+            context_input_size: 65
+        inner_lr: 0.05
         use_context: 
             grid_search: [none, static, dynamic, none, static, dynamic, none, static, dynamic]                  

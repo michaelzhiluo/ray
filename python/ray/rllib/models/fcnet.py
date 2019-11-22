@@ -9,7 +9,6 @@ from ray.rllib.utils import try_import_tf
 
 tf = try_import_tf()
 
-context_input_size = 65
 class FullyConnectedNetwork(Model):
     """Generic fully connected network."""
 
@@ -24,7 +23,7 @@ class FullyConnectedNetwork(Model):
         hiddens = options.get("fcnet_hiddens")
         activation = get_activation_fn(options.get("fcnet_activation"))
         concat_input_size = options.get("concat_input_size")
-
+        context_input_size = options.get("context_input_size")
         if context is not None:
             context = tf.reshape(context, (-1,concat_input_size))
             if options.get("concat_context"):

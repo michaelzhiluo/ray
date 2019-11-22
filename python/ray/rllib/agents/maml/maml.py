@@ -55,11 +55,13 @@ DEFAULT_CONFIG = with_common_config({
     # sampling tasks for performance but can waste a large portion of samples.
     "straggler_mitigation": False,
 
-    "inner_adaptation_steps": 2,
+    "inner_adaptation_steps": 1,
 
     "maml_optimizer_steps": 5,
     # dynamic, static, or none
-    "use_context": "dynamic"
+    "use_context": "dynamic",
+
+    "inner_lr": 0.1
 })
 # __sphinx_doc_end__
 # yapf: enable

@@ -23,7 +23,10 @@ halfcheetah-maml:
         kl_coeff: 0.0005
         num_workers: 3
         num_gpus: 1
+        inner_lr: 0.1
         model:
+            concat_input_size: 10
+            context_input_size: 1
             free_log_std: True
             concat_context: False
         use_context: none                        

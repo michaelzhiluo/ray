@@ -128,6 +128,7 @@ class MAMLLoss(object):
             context=None):
 
         print("MAML Loss")
+        self.config = config
         self.num_tasks = num_tasks
         self.inner_adaptation_steps = inner_adaptation_steps
         self.clip_param = clip_param
@@ -277,11 +278,7 @@ class MAMLLoss(object):
         # Hacky for now, assumes it is Fully connected network in models/fcnet.py, Conv net implemented on a later date
         # Returns pi_new_logits and value_function_prediction
         def fc_network(inp, network_vars, hidden_nonlinearity, output_nonlinearity, policy_config, hyper_vars = None, context=None):
-<<<<<<< HEAD
-            context_input_size = 65
-=======
-            context_input_size = 41
->>>>>>> df886539c0d1f46976790e724c6cdb5e7f596ee2
+            context_input_size = policy_config["context_input_size"]
             hidden_sizes = policy_config["fcnet_hiddens"]
             bias_added = False
             if context is not None:
@@ -392,7 +389,7 @@ class MAMLLoss(object):
         step_sizes = dict()
         for key, param in self.policy_vars.items():
             shape = param.get_shape().as_list()
-            init_stepsize = np.ones(shape, dtype=np.float32) * INNER_LR
+            init_stepsize = np.ones(shape, dtype=np.float32) * self.config["inner_lr"]
             step_sizes[key] = tf.Variable(initial_value=init_stepsize,
                                           dtype=tf.float32, trainable=False)
         self.step_sizes = step_sizes
@@ -616,7 +613,7 @@ class MAMLTFPolicy(LearningRateSchedule, MAMLPostprocessing, TFPolicy):
                 )
 
         if self.config["worker_index"]:
-            LearningRateSchedule.__init__(self, INNER_LR, self.config["lr_schedule"], self.config["worker_index"])
+            LearningRateSchedule.__init__(self, self.config["inner_lr"], self.config["lr_schedule"], self.config["worker_index"])
         else:
             LearningRateSchedule.__init__(self, self.config["lr"],
                                           self.config["lr_schedule"], self.config["worker_index"])
