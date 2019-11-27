@@ -215,7 +215,7 @@ class MAMLLoss(object):
             ppo_obj.append(ppo_loss)
 
         self.loss = tf.reduce_mean(tf.stack(ppo_obj, axis=0)) + 0.0005*mean_inner_kl
-        self.loss = tf.Print(self.loss, ["Meta-Loss", self.loss, tf.shape(self.obs[0][0]), tf.shape(self.obs[0][1]), tf.shape(self.obs[0][2]), tf.shape(self.obs[1][0]), tf.shape(self.obs[1][1]),tf.shape(self.obs[1][2])], summarize=1000)
+        self.loss = tf.Print(self.loss, ["Meta-Loss", self.loss, tf.shape(self.obs[0][0])]) #, tf.shape(self.obs[0][1]), tf.shape(self.obs[0][2]), tf.shape(self.obs[1][0]), tf.shape(self.obs[1][1]),tf.shape(self.obs[1][2])], summarize=1000)
 
     def PPOLoss(self,
          actions,

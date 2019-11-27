@@ -62,7 +62,6 @@ class MAMLOptimizer(PolicyOptimizer):
             env_configs = self.workers.local_worker().sample_tasks(self.num_tasks)
             for i,e in enumerate(self.workers.remote_workers()):
                 e.set_task.remote(env_configs[i])
-
         env_configs = self.preprocess_context(env_configs)
         # Collecting Data from Pre and Post Adaptations
         print("Sampling Data")
@@ -114,7 +113,6 @@ class MAMLOptimizer(PolicyOptimizer):
             for i in range(self.maml_optimizer_steps):
                 fetches = self.workers.local_worker().learn_on_batch(all_samples)
                 print(meta_split)
-                #import pdb; pdb.set_trace()
             self.learner_stats = get_learner_stats(fetches)
 
         self.num_steps_sampled += all_samples.count
@@ -123,6 +121,8 @@ class MAMLOptimizer(PolicyOptimizer):
         return self.learner_stats
 
     def preprocess_context(self, env_configs):
+        if self.config["env"]=="push-v1":
+            return env_configs
         if isinstance(env_configs[0], dict):
             for i, config in enumerate(env_configs):
                 env_configs[i] = np.concatenate([v.flatten() for v in config.values()])

@@ -411,7 +411,7 @@ class Trainer(Trainable):
         env = self._env_id
         if env:
             config["env"] = env
-            if _global_registry.contains(ENV_CREATOR, env):
+            if _global_registry.contains(ENV_CREATOR, env) and env not in metaworld_envs:
                 self.env_creator = _global_registry.get(ENV_CREATOR, env)
             else:
                 if env in metaworld_envs:

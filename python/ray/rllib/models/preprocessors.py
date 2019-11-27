@@ -56,9 +56,10 @@ class Preprocessor(object):
                 observation = np.array(observation)
             try:
                 if not self._obs_space.contains(observation):
-                    raise ValueError(
-                        "Observation outside expected value range",
-                        self._obs_space, observation)
+                    #raise ValueError(
+                        #"Observation outside expected value range",
+                        #self._obs_space, observation)
+                    pass
             except AttributeError:
                 raise ValueError(
                     "Observation for a Box/MultiBinary/MultiDiscrete space "
