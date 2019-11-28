@@ -1,0 +1,307 @@
+{
+  "checkpoints": [
+    {
+      "trainable_name": "IMPALA",
+      "config": {
+        "vtrace": true,
+        "model": {
+          "vf_share_layers": false
+        },
+        "gamma": 0.995,
+        "num_sgd_iter": {
+          "grid_serach": [
+            20,
+            20,
+            20
+          ]
+        },
+        "lr": 0.0001,
+        "broadcast_interval": 1,
+        "max_sample_requests_in_flight_per_worker": 1,
+        "sample_batch_size": 2048,
+        "train_batch_size": 32768,
+        "num_envs_per_worker": 32,
+        "vf_loss_coeff": 1.0,
+        "entropy_coeff": 0.0,
+        "minibatch_buffer_size": 5,
+        "num_workers": 10,
+        "num_gpus": 1,
+        "grad_clip": 0.5,
+        "batch_mode": "truncate_episodes",
+        "observation_filter": "MeanStdFilter",
+        "env": "Hopper-v2"
+      },
+      "local_dir": "./hopper-impala-results/hopper-impala",
+      "experiment_tag": "0",
+      "resources": {
+        "cpu": 1,
+        "gpu": 1,
+        "extra_cpu": 10,
+        "extra_gpu": 0,
+        "custom_resources": {},
+        "extra_custom_resources": {}
+      },
+      "stopping_criterion": {
+        "time_total_s": 10800
+      },
+      "upload_dir": "",
+      "loggers": "80049502000000000000004e2e",
+      "sync_function": "80049502000000000000004e2e",
+      "verbose": true,
+      "max_failures": 3,
+      "last_result": {
+        "episode_reward_max": 1.913864467797735,
+        "episode_reward_min": 1.4245934163785403,
+        "episode_reward_mean": 1.6999956829292704,
+        "episode_len_mean": 6.0,
+        "episodes_this_iter": 109334,
+        "policy_reward_mean": {},
+        "custom_metrics": {},
+        "sampler_perf": {
+          "mean_env_wait_ms": 7.172525717436199,
+          "mean_processing_ms": 5.7107720087839695,
+          "mean_inference_ms": 1.3839276846677047
+        },
+        "off_policy_estimator": {},
+        "num_metric_batches_dropped": 0,
+        "info": {
+          "num_steps_trained": 226754560,
+          "num_steps_sampled": 226754560,
+          "num_weight_syncs": 3460,
+          "num_steps_replayed": 0,
+          "sample_throughput": 17659.612,
+          "train_throughput": 17659.612,
+          "timing_breakdown": {
+            "optimizer_step_time_ms": 5207.505,
+            "learner_grad_time_ms": 157.53,
+            "learner_load_time_ms": NaN,
+            "learner_load_wait_time_ms": NaN,
+            "learner_dequeue_time_ms": 3522.767
+          },
+          "learner_queue": {
+            "size_count": 3460,
+            "size_mean": 3.8,
+            "size_std": 2.280350850198276,
+            "size_quantiles": [
+              0.0,
+              0.9000000000000004,
+              4.0,
+              7.0,
+              8.0
+            ]
+          },
+          "learner": {
+            "cur_lr": 9.999999747378752e-05,
+            "policy_loss": NaN,
+            "entropy": NaN,
+            "entropy_coeff": 0.0,
+            "var_gnorm": NaN,
+            "vf_loss": 20453.294921875,
+            "vf_explained_var": 0.11181372404098511,
+            "model": {},
+            "grad_gnorm": NaN
+          }
+        },
+        "timesteps_this_iter": 655360,
+        "done": true,
+        "timesteps_total": 226754560,
+        "episodes_total": 20031107,
+        "training_iteration": 347,
+        "experiment_id": "675ec5ea53c94362811f66875a7339dc",
+        "date": "2019-09-14_02-19-58",
+        "timestamp": 1568452798,
+        "time_this_iter_s": 37.08167028427124,
+        "time_total_s": 10825.116094589233,
+        "pid": 41155,
+        "hostname": "c80",
+        "node_ip": "169.229.49.180",
+        "config": {
+          "monitor": false,
+          "log_level": "INFO",
+          "callbacks": {
+            "on_episode_start": null,
+            "on_episode_step": null,
+            "on_episode_end": null,
+            "on_sample_end": null,
+            "on_train_result": null,
+            "on_postprocess_traj": null
+          },
+          "ignore_worker_failures": false,
+          "use_eager": false,
+          "log_sys_usage": true,
+          "model": {
+            "conv_filters": null,
+            "conv_activation": "relu",
+            "fcnet_activation": "tanh",
+            "fcnet_hiddens": [
+              256,
+              256
+            ],
+            "free_log_std": false,
+            "no_final_linear": false,
+            "vf_share_layers": false,
+            "use_lstm": false,
+            "max_seq_len": 20,
+            "lstm_cell_size": 256,
+            "lstm_use_prev_action_reward": false,
+            "state_shape": null,
+            "framestack": true,
+            "dim": 84,
+            "grayscale": false,
+            "zero_mean": true,
+            "custom_preprocessor": null,
+            "custom_model": null,
+            "custom_options": {}
+          },
+          "optimizer": {},
+          "gamma": 0.995,
+          "horizon": null,
+          "soft_horizon": false,
+          "env_config": {},
+          "env": "Hopper-v2",
+          "clip_rewards": null,
+          "clip_actions": true,
+          "preprocessor_pref": "deepmind",
+          "lr": 0.0001,
+          "evaluation_interval": null,
+          "evaluation_num_episodes": 10,
+          "evaluation_config": {},
+          "num_workers": 10,
+          "num_gpus": 1,
+          "num_cpus_per_worker": 1,
+          "num_gpus_per_worker": 0,
+          "custom_resources_per_worker": {},
+          "num_cpus_for_driver": 1,
+          "num_envs_per_worker": 32,
+          "sample_batch_size": 2048,
+          "train_batch_size": 32768,
+          "batch_mode": "truncate_episodes",
+          "sample_async": false,
+          "observation_filter": "MeanStdFilter",
+          "synchronize_filters": true,
+          "tf_session_args": {
+            "intra_op_parallelism_threads": 2,
+            "inter_op_parallelism_threads": 2,
+            "gpu_options": {
+              "allow_growth": true
+            },
+            "log_device_placement": false,
+            "device_count": {
+              "CPU": 1
+            },
+            "allow_soft_placement": true
+          },
+          "local_tf_session_args": {
+            "intra_op_parallelism_threads": 8,
+            "inter_op_parallelism_threads": 8
+          },
+          "compress_observations": false,
+          "collect_metrics_timeout": 180,
+          "metrics_smoothing_episodes": 100,
+          "remote_worker_envs": false,
+          "remote_env_batch_wait_ms": 0,
+          "min_iter_time_s": 10,
+          "timesteps_per_iteration": 0,
+          "input": "sampler",
+          "input_evaluation": [
+            "is",
+            "wis"
+          ],
+          "postprocess_inputs": false,
+          "shuffle_buffer_size": 0,
+          "output": null,
+          "output_compress_columns": [
+            "obs",
+            "new_obs"
+          ],
+          "output_max_file_size": 67108864,
+          "multiagent": {
+            "policies": {},
+            "policy_mapping_fn": null,
+            "policies_to_train": null
+          },
+          "vtrace": true,
+          "vtrace_clip_rho_threshold": 1.0,
+          "vtrace_clip_pg_rho_threshold": 1.0,
+          "num_data_loader_buffers": 1,
+          "minibatch_buffer_size": 5,
+          "num_sgd_iter": {
+            "grid_serach": [
+              20,
+              20,
+              20
+            ]
+          },
+          "replay_proportion": 0.0,
+          "replay_buffer_num_slots": 0,
+          "learner_queue_size": 16,
+          "max_sample_requests_in_flight_per_worker": 1,
+          "broadcast_interval": 1,
+          "num_aggregation_workers": 0,
+          "grad_clip": 0.5,
+          "opt_type": "adam",
+          "lr_schedule": null,
+          "decay": 0.99,
+          "momentum": 0.0,
+          "epsilon": 0.1,
+          "vf_loss_coeff": 1.0,
+          "entropy_coeff": 0.0,
+          "entropy_coeff_schedule": null,
+          "_fake_sampler": false
+        },
+        "time_since_restore": 10825.116094589233,
+        "timesteps_since_restore": 226754560,
+        "iterations_since_restore": 347,
+        "num_healthy_workers": 10
+      },
+      "last_update_time": 1568452798.4917085,
+      "checkpoint_freq": 0,
+      "checkpoint_at_end": false,
+      "history": [],
+      "keep_checkpoints_num": null,
+      "_cmp_greater": true,
+      "best_checkpoint_attr_value": -Infinity,
+      "checkpoint_score_attr": "training_iteration",
+      "_checkpoint": "80049553000000000000008c0e7261792e74756e652e747269616c948c0a436865636b706f696e749493942981947d94288c0773746f72616765948c046469736b948c0576616c7565944e8c0b6c6173745f726573756c74947d9475622e",
+      "export_formats": [],
+      "status": "TERMINATED",
+      "logdir": "./hopper-impala-results/hopper-impala/IMPALA_Hopper-v2_0_2019-09-13_23-19-107i0_9_8l",
+      "runner": null,
+      "result_logger": null,
+      "last_debug": 1568452798.4916809,
+      "trial_id": "908f0d5e",
+      "error_file": null,
+      "num_failures": 0,
+      "custom_trial_name": null,
+      "results": "80049502000000000000004e2e",
+      "best_result": "80049502000000000000004e2e",
+      "param_config": "80049502000000000000004e2e",
+      "extra_arg": "80049502000000000000004e2e",
+      "_nonjson_fields": [
+        "_checkpoint",
+        "loggers",
+        "sync_function",
+        "results",
+        "best_result",
+        "param_config",
+        "extra_arg"
+      ],
+      "__logger_started__": false
+    }
+  ],
+  "runner_data": {
+    "_global_time_limit": Infinity,
+    "_total_time": 10825.116094589233,
+    "_iteration": 347,
+    "_verbose": true,
+    "_server_port": 4321,
+    "_metadata_checkpoint_dir": "./hopper-impala-results/hopper-impala",
+    "_start_time": 1568441944.2870014,
+    "_session_str": "2019-09-13_23-19-04",
+    "launch_web_server": false
+  },
+  "stats": {
+    "start_time": 1568441944.2870014,
+    "timestamp": 1568452798.4962327
+  }
+}

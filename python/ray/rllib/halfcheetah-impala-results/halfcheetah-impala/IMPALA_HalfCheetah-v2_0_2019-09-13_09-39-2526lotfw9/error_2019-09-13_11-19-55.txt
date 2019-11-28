@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "/data/mluo/miniconda3/envs/ray/lib/python3.6/site-packages/ray/tune/trial_runner.py", line 436, in _process_trial
+    result = self.trial_executor.fetch_result(trial)
+  File "/data/mluo/miniconda3/envs/ray/lib/python3.6/site-packages/ray/tune/ray_trial_executor.py", line 323, in fetch_result
+    result = ray.get(trial_future[0])
+  File "/data/mluo/miniconda3/envs/ray/lib/python3.6/site-packages/ray/worker.py", line 2195, in get
+    raise value
+ray.exceptions.RayActorError: The actor died unexpectedly before finishing this task.

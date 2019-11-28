@@ -95,13 +95,15 @@ class PPOLoss(object):
         action_kl = prev_dist.kl(curr_action_dist)
         self.mean_kl = reduce_mean_valid(action_kl)
 
+        self.kl_loss = cur_kl_coeff[0] * self.mean_kl
+
         surrogate_loss = advantages * logp_ratio 
         self.mean_policy_loss = reduce_mean_valid(-surrogate_loss)
 
         loss = reduce_mean_valid(
             -surrogate_loss)
-        loss = tf.Print(loss, ["Worker Loss", loss, self.mean_kl, model.outputs])
-        self.loss = loss
+        loss = tf.Print(loss, ["Worker Loss", loss, self.mean_kl])
+        self.loss = loss + 0.0*self.kl_loss
 
 class MAMLLoss(object):
 
@@ -217,9 +219,9 @@ class MAMLLoss(object):
                     clip_loss = True
                     )
             ppo_obj.append(ppo_loss)
-
-        self.loss = tf.reduce_mean(tf.stack(ppo_obj, axis=0)) + tf.reduce_mean(self.cur_kl_coeff * mean_inner_kl)
-        self.loss = tf.Print(self.loss, ["Meta-Loss", self.loss, mean_inner_kl, pi_new_logits[0]])
+        self.kl_loss = tf.reduce_mean(tf.multiply(cur_kl_coeff, mean_inner_kl))
+        self.loss = tf.reduce_mean(tf.stack(ppo_obj, axis=0)) + self.kl_loss
+        self.loss = tf.Print(self.loss, ["Meta-Loss", self.loss, mean_inner_kl])
 
     def PPOLoss(self,
          actions,
@@ -527,7 +529,7 @@ class MAMLTFPolicy(LearningRateSchedule, MAMLPostprocessing, TFPolicy):
         self.kl_coeff = tf.get_variable(
             initializer=tf.constant_initializer(self.kl_coeff_val),
             name="kl_coeff",
-            shape=[self.config["inner_adaptation_steps"]],
+            shape=(self.config["inner_adaptation_steps"]),
             trainable=False,
             dtype=tf.float32)
 
@@ -646,6 +648,7 @@ class MAMLTFPolicy(LearningRateSchedule, MAMLPostprocessing, TFPolicy):
             "cur_kl_coeff": self.kl_coeff,
             "cur_lr": tf.cast(self.cur_lr, tf.float64),
             "total_loss": self.loss_obj.loss,
+            "kl_loss": self.loss_obj.kl_loss
             #"policy_loss": self.loss_obj.mean_policy_loss,
             #"vf_loss": self.loss_obj.mean_vf_loss,
             #"vf_explained_var": self.explained_variance,
