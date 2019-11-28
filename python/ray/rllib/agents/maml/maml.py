@@ -23,7 +23,7 @@ DEFAULT_CONFIG = with_common_config({
     # GAE(lambda) parameter
     "lambda": 1.0,
     # Initial coefficient for KL divergence
-    "kl_coeff": 0.2,
+    "kl_coeff": 0.0005,
     # Size of batches collected from each worker
     "sample_batch_size": 200,
     # Number of SGD iterations in each outer loop
@@ -61,7 +61,9 @@ DEFAULT_CONFIG = with_common_config({
     # dynamic, static, or none
     "use_context": "dynamic",
 
-    "inner_lr": 0.1
+    "inner_lr": 0.1,
+
+    "use_kl_loss": False,
 })
 # __sphinx_doc_end__
 # yapf: enable
@@ -107,10 +109,11 @@ class MAMLTrainer(Trainer):
                 "require observation normalization.")
         prev_steps = self.optimizer.num_steps_sampled
         fetches = self.optimizer.step()
-        if "kl" in fetches:
+        import pdb; pdb.set_trace()
+        if "kl" in fetches and self.config["use_kl_loss"]:
             # single-agent
             self.workers.local_worker().for_policy(
-                lambda pi: pi.update_kl(fetches["kl"]))
+                lambda pi: pi.update_kls(fetches["kl"]))
 
         # Pre adaptation metrics
         res = self.optimizer.collect_metrics("pre",

@@ -3,7 +3,7 @@ humanoid-maml:
     run: MAML
     stop:
         training_iteration: 501
-    local_dir: /data/mluo/delete-this
+    local_dir: /data/mluo/humanoid-concat-context
     config:
         # Sample Batch Size must equal Horizon!
         # Must Also be Complete Episdoes
@@ -28,6 +28,7 @@ humanoid-maml:
             context_input_size: 2
             hyper_hiddens: [64, 64, 64]
             free_log_std: True
-            concat_context: False
+            concat_context: 
+                grid_search: [True, True, True]
         inner_lr: 0.1
-        use_context: [static, static, static, dynamic, dynamic, dynamic]           
+        use_context: dynamic           

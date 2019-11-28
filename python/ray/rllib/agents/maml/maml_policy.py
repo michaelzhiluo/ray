@@ -100,7 +100,7 @@ class PPOLoss(object):
 
         loss = reduce_mean_valid(
             -surrogate_loss)
-        loss = tf.Print(loss, ["Worker Loss", loss, logits], summarize = 24)
+        loss = tf.Print(loss, ["Worker Loss", loss, self.mean_kl, model.outputs])
         self.loss = loss
 
 class MAMLLoss(object):
@@ -162,10 +162,13 @@ class MAMLLoss(object):
             value_fns.append(value_fn)
             current_policy_vars.append(self.policy_vars)
 
+        self.pi_new_logits = pi_new_logits
+
         inner_kls = []
         inner_ppo_loss = []
         # Recompute weights for inner-adaptation (since this is also incoporated in meta objective loss function)
         for step in range(self.inner_adaptation_steps):
+            kls = []
             for i in range(self.num_tasks):
                 # Loss Function Shenanigans
                 ppo_loss, _, kl_loss, _, _ = self.PPOLoss(
@@ -188,12 +191,13 @@ class MAMLLoss(object):
                 adapted_policy_vars = self.compute_updated_variables(ppo_loss, current_policy_vars[i])
                 pi_new_logits[i], value_fns[i] = self.feed_forward(self.obs[step+1][i], adapted_policy_vars, policy_config=config["model"], context = contexts[i])
                 current_policy_vars[i] = adapted_policy_vars
-                inner_kls.append(kl_loss)
+                kls.append(kl_loss)
                 inner_ppo_loss.append(ppo_loss)
+            self.kls = kls
+            inner_kls.append(kls)
 
-
-        mean_inner_kl = tf.reduce_mean(tf.stack(inner_kls, axis=0))
-
+        mean_inner_kl = tf.stack([tf.reduce_mean(tf.stack(inner_kl)) for inner_kl in inner_kls])
+        self.mean_inner_kl = mean_inner_kl
         ppo_obj = []
         for i in range(self.num_tasks):
             ppo_loss, _, kl_loss, _, _ = self.PPOLoss(
@@ -214,8 +218,8 @@ class MAMLLoss(object):
                     )
             ppo_obj.append(ppo_loss)
 
-        self.loss = tf.reduce_mean(tf.stack(ppo_obj, axis=0)) + 0.0005*mean_inner_kl
-        self.loss = tf.Print(self.loss, ["Meta-Loss", self.loss, tf.shape(self.obs[0][0])]) #, tf.shape(self.obs[0][1]), tf.shape(self.obs[0][2]), tf.shape(self.obs[1][0]), tf.shape(self.obs[1][1]),tf.shape(self.obs[1][2])], summarize=1000)
+        self.loss = tf.reduce_mean(tf.stack(ppo_obj, axis=0)) + tf.reduce_mean(self.cur_kl_coeff * mean_inner_kl)
+        self.loss = tf.Print(self.loss, ["Meta-Loss", self.loss, mean_inner_kl, pi_new_logits[0]])
 
     def PPOLoss(self,
          actions,
@@ -235,7 +239,6 @@ class MAMLLoss(object):
     
         def reduce_mean_valid(t, valid_mask):
             return tf.reduce_mean(tf.boolean_mask(t, valid_mask))
-
         pi_new_dist = self.dist_class(curr_logits)
         pi_old_dist = self.dist_class(behaviour_logits)
 
@@ -244,7 +247,7 @@ class MAMLLoss(object):
         vf_loss = reduce_mean_valid(self.vf_loss(value_fn, value_targets, vf_preds, vf_clip_param), valid_mask)
         entropy_loss = reduce_mean_valid(self.entropy_loss(pi_new_dist), valid_mask)
 
-        total_loss = - surr_loss  # + 0 * kl_loss + vf_loss_coeff * vf_loss - entropy_coeff * entropy_loss
+        total_loss = - surr_loss 
         return total_loss, surr_loss, kl_loss, vf_loss, entropy_loss
 
     def surrogate_loss(self, actions, curr_dist, prev_dist, advantages, clip_loss):
@@ -449,7 +452,7 @@ class MAMLTFPolicy(LearningRateSchedule, MAMLPostprocessing, TFPolicy):
         self.sess = tf.get_default_session()
         self.action_space = action_space
         self.config = config
-        self.kl_coeff_val = self.config["kl_coeff"]
+        self.kl_coeff_val = [self.config["kl_coeff"]]*self.config["inner_adaptation_steps"]
         self.kl_target = self.config["kl_target"]
         dist_cls, logit_dim = ModelCatalog.get_action_dist(
             action_space, self.config["model"])
@@ -524,12 +527,11 @@ class MAMLTFPolicy(LearningRateSchedule, MAMLPostprocessing, TFPolicy):
         self.kl_coeff = tf.get_variable(
             initializer=tf.constant_initializer(self.kl_coeff_val),
             name="kl_coeff",
-            shape=(),
+            shape=[self.config["inner_adaptation_steps"]],
             trainable=False,
             dtype=tf.float32)
 
         self.logits = self.model.outputs
-
         curr_action_dist = dist_cls(self.logits)
         self.sampler = curr_action_dist.sample()
         if self.config["use_gae"]:
@@ -650,6 +652,8 @@ class MAMLTFPolicy(LearningRateSchedule, MAMLPostprocessing, TFPolicy):
             #"kl": self.loss_obj.mean_kl,
             #"entropy": self.loss_obj.mean_entropy
         }
+        if not self.config["worker_index"]:
+            self.stats_fetches["kl"] =  self.loss_obj.mean_inner_kl
 
     @override(TFPolicy)
     def copy(self, existing_inputs):
@@ -674,11 +678,12 @@ class MAMLTFPolicy(LearningRateSchedule, MAMLPostprocessing, TFPolicy):
     def extra_compute_grad_fetches(self):
         return {LEARNER_STATS_KEY: self.stats_fetches}
 
-    def update_kl(self, sampled_kl):
-        if sampled_kl > 2.0 * self.kl_target:
-            self.kl_coeff_val *= 1.5
-        elif sampled_kl < 0.5 * self.kl_target:
-            self.kl_coeff_val *= 0.5
+    def update_kls(self, sampled_kls):
+        for i, kl in enumerate(sampled_kls):      
+            if kl > 2.0 * self.kl_target:
+                self.kl_coeff_val[i] *= 1.5
+            elif kl < 0.5 * self.kl_target:
+                self.kl_coeff_val[i] *= 0.5
         self.kl_coeff.load(self.kl_coeff_val, session=self.sess)
         return self.kl_coeff_val
 

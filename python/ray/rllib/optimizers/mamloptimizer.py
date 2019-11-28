@@ -112,7 +112,7 @@ class MAMLOptimizer(PolicyOptimizer):
             all_samples["split"] = np.array(meta_split)
             for i in range(self.maml_optimizer_steps):
                 fetches = self.workers.local_worker().learn_on_batch(all_samples)
-                print(meta_split)
+                print(fetches)
             self.learner_stats = get_learner_stats(fetches)
 
         self.num_steps_sampled += all_samples.count
