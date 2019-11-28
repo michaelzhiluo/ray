@@ -2,7 +2,7 @@ walker-params-maml:
     env: Walker2DRandParams-v0
     run: MAML
     stop:
-        training_iteration: 1001
+        training_iteration: 501
     local_dir: /data/mluo/walker_rand_params
     config:
         # Sample Batch Size must equal Horizon!
@@ -13,13 +13,15 @@ walker-params-maml:
         batch_mode: complete_episodes
 
         inner_adaptation_steps: 1
-        maml_optimizer_steps: 5
+        maml_optimizer_steps: 3
         gamma: 0.99
         lambda: 1.0
         lr: .0001
         vf_loss_coeff: 0.5
         clip_param: 0.3
-        kl_coeff: 0.0005
+        kl_coeff: 0.001
+        use_kl_loss: True
+        kl_target: 0.01
         num_workers: 40
         num_gpus: 1
         model:
@@ -29,4 +31,4 @@ walker-params-maml:
             context_input_size: 65
         inner_lr: 0.05
         use_context: 
-            grid_search: [none, static, dynamic, none, static, dynamic, none, static, dynamic]                  
+            grid_search: [none, none, none, none]                  

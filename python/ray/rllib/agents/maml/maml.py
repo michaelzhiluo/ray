@@ -109,7 +109,6 @@ class MAMLTrainer(Trainer):
                 "require observation normalization.")
         prev_steps = self.optimizer.num_steps_sampled
         fetches = self.optimizer.step()
-        import pdb; pdb.set_trace()
         if "kl" in fetches and self.config["use_kl_loss"]:
             # single-agent
             self.workers.local_worker().for_policy(

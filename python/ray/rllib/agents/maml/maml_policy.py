@@ -682,11 +682,17 @@ class MAMLTFPolicy(LearningRateSchedule, MAMLPostprocessing, TFPolicy):
         return {LEARNER_STATS_KEY: self.stats_fetches}
 
     def update_kls(self, sampled_kls):
-        for i, kl in enumerate(sampled_kls):      
+        for i, kl in enumerate(sampled_kls): 
+            if kl < self.kl_target/1.5:
+                self.kl_coeff_val[i] *= 0.5
+            elif kl > 1.5 * self.kl_target:
+                self.kl_coeff_val[i] *= 2.0
+            '''     
             if kl > 2.0 * self.kl_target:
                 self.kl_coeff_val[i] *= 1.5
             elif kl < 0.5 * self.kl_target:
                 self.kl_coeff_val[i] *= 0.5
+            '''
         self.kl_coeff.load(self.kl_coeff_val, session=self.sess)
         return self.kl_coeff_val
 
