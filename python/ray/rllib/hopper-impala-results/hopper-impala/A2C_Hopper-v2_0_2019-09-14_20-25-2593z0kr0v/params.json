@@ -1,9 +1,0 @@
-{
-  "clip_rewards": true,
-  "env": "Hopper-v2",
-  "lr": 0.0001,
-  "num_envs_per_worker": 32,
-  "num_gpus": 1,
-  "num_workers": 5,
-  "sample_batch_size": 200
-}
