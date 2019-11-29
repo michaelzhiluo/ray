@@ -28,7 +28,6 @@ tf = try_import_tf()
 
 # Frozen logits of the policy that computed the action
 BEHAVIOUR_LOGITS = "behaviour_logits"
-INNER_LR = 0.1
 
 
 class PPOLoss(object):
@@ -103,7 +102,7 @@ class PPOLoss(object):
         loss = reduce_mean_valid(
             -surrogate_loss)
         loss = tf.Print(loss, ["Worker Loss", loss, self.mean_kl])
-        self.loss = loss + 0.0*self.kl_loss
+        self.loss = loss + tf.stop_gradient(0.00000000000*self.kl_loss)
 
 class MAMLLoss(object):
 
@@ -373,7 +372,7 @@ class MAMLLoss(object):
             if grad[i] is None:
                 adapted_vars[name] = var
             else:
-                adapted_vars[name] = var - 0.1*grad[i] #tf.multiply(self.step_sizes[name], grad[i])
+                adapted_vars[name] = var - self.config["inner_lr"]*grad[i] #tf.multiply(self.step_sizes[name], grad[i])
         return adapted_vars
 
     def split_placeholders(self, placeholder, split):

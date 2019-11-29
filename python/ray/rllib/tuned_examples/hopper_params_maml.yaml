@@ -29,6 +29,6 @@ hopper-params-maml:
             concat_context: False
             concat_input_size: 41
             context_input_size: 41
-        inner_lr: 0.05
+        inner_lr: 0.03
         use_context:
             grid_search: [none, none, none, none]                  
