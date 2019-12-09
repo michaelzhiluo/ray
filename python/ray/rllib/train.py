@@ -139,7 +139,8 @@ def run(args, parser):
             object_store_memory=args.ray_object_store_memory,
             redis_max_memory=args.ray_redis_max_memory,
             num_cpus=args.ray_num_cpus,
-            num_gpus=args.ray_num_gpus)
+            num_gpus=args.ray_num_gpus,
+            redis_password="MAML-IZED")
     run_experiments(
         experiments,
         scheduler=_make_scheduler(args),

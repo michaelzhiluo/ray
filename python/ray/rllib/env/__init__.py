@@ -53,6 +53,11 @@ register(
     entry_point='ray.rllib.env.hopper_random_params:NormalizedEnv',
 )
 
+register(
+    id='SawyerSimple-v0',
+    entry_point='ray.rllib.env.sawyer_simple:NormalizedEnv',
+)
+
 __all__ = [
     "BaseEnv", "MultiAgentEnv", "ExternalEnv", "VectorEnv", "ServingEnv",
     "EnvContext"
