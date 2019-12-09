@@ -58,6 +58,11 @@ register(
     entry_point='ray.rllib.env.sawyer_simple:NormalizedEnv',
 )
 
+register(
+    id='SawyerPush-v0',
+    entry_point='ray.rllib.env.sawyer_push:NormalizedEnv',
+)
+
 __all__ = [
     "BaseEnv", "MultiAgentEnv", "ExternalEnv", "VectorEnv", "ServingEnv",
     "EnvContext"

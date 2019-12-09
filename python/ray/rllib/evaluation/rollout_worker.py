@@ -435,6 +435,17 @@ class RolloutWorker(EvaluatorInterface):
                 else:
                     goal_arr[j] = (goal_arr[j] - goal_low[j]) / rng
             return goal_arr
+        elif self.policy_config["env"]=="SawyerPush-v0":
+            goal_low = [-0.2, 0.5, 0.02, -0.2, 0.5, 0.02]
+            goal_high= [0.2, 0.7, 0.02, 0.2, 0.7, 0.02]
+            goal_arr = np.copy(np.concatenate([v.flatten() for v in task.values()]))
+            for j in range(6):
+                rng = goal_high[j] - goal_low[j]
+                if rng < 0.0001:
+                    goal_arr[j] = 1.0
+                else:
+                    goal_arr[j] = (goal_arr[j] - goal_low[j])/rng
+            return goal_arr
         if isinstance(task, dict):
             return np.concatenate([v.flatten() for v in task.values()])
         return task

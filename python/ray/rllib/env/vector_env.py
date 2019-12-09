@@ -70,7 +70,6 @@ class VectorEnv(object):
         raise NotImplementedError
 
 
-from metaworld.benchmarks import ML1
 class _VectorizedGymEnv(VectorEnv):
     """Internal wrapper for gym envs to implement VectorEnv.
 

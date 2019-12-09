@@ -62,7 +62,6 @@ class MAMLOptimizer(PolicyOptimizer):
             env_configs = self.workers.local_worker().sample_tasks(self.num_tasks)
             for i,e in enumerate(self.workers.remote_workers()):
                 e.set_task.remote(env_configs[i])
-
         env_configs = self.preprocess_context(env_configs)
         # Collecting Data from Pre and Post Adaptations
         print("Sampling Data")
@@ -136,6 +135,20 @@ class MAMLOptimizer(PolicyOptimizer):
                     else:
                         goal_arr[j] = (goal_arr[j] - goal_low[j])/rng
                 env_configs[i] = goal_arr
+            return env_configs
+        elif self.config["env"]=="SawyerPush-v0":
+            goal_low = [-0.2, 0.5, 0.02, -0.2, 0.5, 0.02]
+            goal_high= [0.2, 0.7, 0.02, 0.2, 0.7, 0.02]
+            for i, config in enumerate(env_configs):
+                goal_arr = np.copy(np.concatenate([v.flatten() for v in config.values()]))
+                for j in range(6):
+                    rng = goal_high[j] - goal_low[j]
+                    if rng < 0.0001:
+                        goal_arr[j] = 1.0
+                    else:
+                        goal_arr[j] = (goal_arr[j] - goal_low[j])/rng
+                env_configs[i] = goal_arr
+            return env_configs
         if isinstance(env_configs[0], dict):
             for i, config in enumerate(env_configs):
                 env_configs[i] = np.concatenate([v.flatten() for v in config.values()])
