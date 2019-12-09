@@ -128,7 +128,7 @@ class MAMLOptimizer(PolicyOptimizer):
             goal_low = [-0.2, 0.6, 0.02]
             goal_high= [0.2, 0.8, 0.02]
             for i, config in enumerate(env_configs):
-                goal_arr = env_configs[i]["state_desired_goal"]
+                goal_arr = np.copy(env_configs[i]["state_desired_goal"])
                 for j in range(3):
                     rng = goal_high[j] - goal_low[j]
                     if rng < 0.0001:
