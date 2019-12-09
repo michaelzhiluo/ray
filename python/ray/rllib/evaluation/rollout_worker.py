@@ -424,6 +424,17 @@ class RolloutWorker(EvaluatorInterface):
             env.set_task(task)
 
     def preprocess_context(self, task):
+        if self.policy_config["env"]=="SawyerSimple-v0":
+            goal_low = [-0.2, 0.6, 0.02]
+            goal_high= [0.2, 0.8, 0.02]
+            goal_arr = task["state_desired_goal"]
+            for j in range(3):
+                rng = goal_high[j] - goal_low[j]
+                if rng < 0.0001:
+                    goal_arr[j] = 1.0
+                else:
+                    goal_arr[j] = (goal_arr[j] - goal_low[j])/rng
+            return goal_arr
         if isinstance(task, dict):
             return np.concatenate([v.flatten() for v in task.values()])
         return task
