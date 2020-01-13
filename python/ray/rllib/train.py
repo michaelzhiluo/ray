@@ -140,6 +140,7 @@ def run(args, parser):
             redis_max_memory=args.ray_redis_max_memory,
             num_cpus=args.ray_num_cpus,
             num_gpus=args.ray_num_gpus,
+            temp_dir="/data/mluo/tmp/ray",
             redis_password="MAML-IZED")
     run_experiments(
         experiments,

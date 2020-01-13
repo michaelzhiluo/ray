@@ -230,6 +230,7 @@ class RolloutWorker(EvaluatorInterface):
         elif log_level == "DEBUG":
             enable_periodic_logging()
         self.context = None
+        self.env_config = env_config
         env_context = EnvContext(env_config or {}, worker_index)
         policy_config = policy_config or {}
         self.policy_config = policy_config
@@ -417,14 +418,19 @@ class RolloutWorker(EvaluatorInterface):
         return self.async_env.vector_env.envs[0].sample_tasks(n_tasks)
 
     def set_task(self, task):
-        if not self.policy_config["use_context"] == "none":
-            self.policy_map['default_policy'].context = self.preprocess_context(task)
-            self.context = task
         for env in self.async_env.vector_env.envs:
             env.set_task(task)
+        self.policy_map['default_policy'].context = self.preprocess_context(task)
+        self.context = task
+        # Returns post-processed latent representation of Context
+        return self.policy_map['default_policy'].context
 
     def preprocess_context(self, task):
-        if self.policy_config["env"]=="SawyerSimple-v0":
+        #import pdb; pdb.set_trace()
+        metaworld_envs = ['bin-picking-v1', 'box-close-v1', 'hand-insert-v1', 'door-lock-v1', 'door-unlock-v1', 'reach-v1', 'push-v1', 'pick-place-v1', 'reach-wall-v1', 'pick-place-wall-v1', 'push-wall-v1', 'door-open-v1', 'door-close-v1', 'drawer-open-v1', 'drawer-close-v1', 'button-press_topdown-v1', 'button-press-v1', 'button-press-topdown-wall-v1', 'button-press-wall-v1', 'peg-insert-side-v1', 'peg-unplug-side-v1', 'window-open-v1', 'window-close-v1', 'dissassemble-v1', 'hammer-v1', 'plate-slide-v1', 'plate-slide-side-v1', 'plate-slide-back-v1', 'plate-slide-back-side-v1', 'handle-press-v1', 'handle-pull-v1', 'handle-press-side-v1', 'handle-pull-side-v1', 'stick-push-v1', 'stick-pull-v1', 'basket-ball-v1', 'soccer-v1', 'faucet-open-v1', 'faucet-close-v1', 'coffee-push-v1', 'coffee-pull-v1', 'coffee-button-v1', 'sweep-v1', 'sweep-into-v1', 'pick-out-of-hole-v1', 'assembly-v1', 'shelf-place-v1', 'push-back-v1', 'lever-pull-v1', 'dial-turn-v1']
+        if self.policy_config["env"] in metaworld_envs:
+            return task
+        elif self.policy_config["env"]=="SawyerSimple-v0":
             goal_low = [-0.2, 0.6, 0.02]
             goal_high= [0.2, 0.8, 0.02]
             goal_arr = np.copy(task["state_desired_goal"])

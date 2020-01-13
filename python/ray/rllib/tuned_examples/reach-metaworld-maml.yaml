@@ -1,12 +1,8 @@
 reach-maml:
-    env:
-        grid_search: 
-            - reach-v1
-            - push-v1
-            - pick-place-v1
+    env: reach-v1
     run: MAML
     stop:
-        training_iteration: 101
+        training_iteration: 501
     local_dir: /data/mluo/metaworld-emvs
     config:
         # Sample Batch Size must equal Horizon!
@@ -33,4 +29,4 @@ reach-maml:
             concat_context: True
         inner_lr: 0.05
         use_context:
-            grid_search: [none, none, none, none, none]               
+            grid_search: [none, none]        

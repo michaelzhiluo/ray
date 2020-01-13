@@ -89,6 +89,7 @@ class _VectorizedGymEnv(VectorEnv):
         self.make_env = make_env
         self.envs = existing_envs
         self.num_envs = num_envs
+        #import pdb; pdb.set_trace()
         import pickle
         env_pickle = pickle.dumps(self.envs[0])
         while len(self.envs) < self.num_envs:

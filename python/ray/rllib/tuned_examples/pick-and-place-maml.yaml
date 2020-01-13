@@ -20,7 +20,7 @@ metaworld-maml:
         vf_loss_coeff: 0.5
         clip_param: 0.3
         kl_coeff: 0.0005
-        num_workers: 1
+        num_workers: 20
         num_gpus: 1
         model:
             concat_input_size: 10
