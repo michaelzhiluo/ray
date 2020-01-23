@@ -95,7 +95,7 @@ class MAMLTrainer(Trainer):
         pre_res['episode_reward_mean(post)'] = post_res['episode_reward_mean']
         pre_res['episode_reward_min(post)'] = post_res['episode_reward_min']
 	
-        pre_res['pre-post-delta']= post_res['episode_reward_mean'] - pre_res['episode-reward-mean']
+        pre_res['pre-post-delta']= post_res['episode_reward_mean'] - pre_res['episode_reward_mean']
 
         return pre_res
 

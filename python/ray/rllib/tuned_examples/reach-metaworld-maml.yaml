@@ -1,9 +1,9 @@
-reach-maml:
+reacch-maml:
     env: reach-v1
     run: MAML
     stop:
         training_iteration: 501
-    local_dir: /data/mluo/metaworld-emvs
+    local_dir: /data/mluo/metaworld-reach-envs
     config:
         # Sample Batch Size must equal Horizon!
         # Must Also be Complete Episdoes
@@ -12,8 +12,8 @@ reach-maml:
         num_envs_per_worker: 5
         batch_mode: complete_episodes
         vf_loss_coeff: 0.5
-        inner_adaptation_steps: 1
-        maml_optimizer_steps: 3
+        inner_adaptation_steps: 8
+        maml_optimizer_steps:
         gamma: 0.99
         lambda: 1.0
         lr: .0003
@@ -30,3 +30,4 @@ reach-maml:
         inner_lr: 0.05
         use_context:
             grid_search: [none, none]        
+
