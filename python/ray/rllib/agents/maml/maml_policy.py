@@ -284,6 +284,7 @@ class MAMLLoss(object):
         def fc_network(inp, network_vars, hidden_nonlinearity, output_nonlinearity, policy_config, hyper_vars = None, context=None):
             context_input_size = policy_config["context_input_size"]
             hidden_sizes = policy_config["fcnet_hiddens"]
+            concat_hidden = policy_config["concat_hidden"]
             bias_added = False
             if context is not None:
                 c = context
@@ -312,9 +313,11 @@ class MAMLLoss(object):
                         else:
                             raise NameError
                         bias_added = False
-                film_params = tf.split(c, [val for val in hidden_sizes for _ in (0, 1)],axis=1)
+                film_params = tf.split(c,  [val for val in concat_hidden], axis=1)
+                #film_params = tf.split(c, [val for val in hidden_sizes for _ in (0, 1)],axis=1)
 
             x = inp
+            j=0
             for name, param in network_vars.items():
                 if "kernel" in name:
                     x = tf.matmul(x, param)
@@ -328,7 +331,13 @@ class MAMLLoss(object):
                     if "fc_out" not in name:
                         x = hidden_nonlinearity(x)
                         if context is not None and not policy_config["concat_context"]:
-                            x =  tf.einsum('ij,kj->ij', x, film_params.pop(0))+ film_params.pop(0)
+                            temp = tf.tile(film_params[j][0], tf.shape(x)[0:1])
+                            temp = tf.reshape(temp, [-1, concat_hidden[j]])
+                            x = tf.concat([x, temp], axis=1)
+                            j+=1
+                            #x =  tf.einsum('ij,kj->ij', x, -2 + 4*tf.math.sigmoid(film_params.pop(0)))+ (-0.5 + tf.math.sigmoid(film_params.pop(0)))
+                            #x =  tf.einsum('ij,kj->ij', x, 0.5 + tf.math.sigmoid(film_params.pop(0)))+ (-0.5 + tf.math.sigmoid(film_params.pop(0)))
+                            #x =  tf.einsum('ij,kj->ij', x, film_params.pop(0)+1)+ film_params.pop(0)
                     elif "fc_out" in name:
                         x = output_nonlinearity(x)
                     else:

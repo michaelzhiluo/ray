@@ -52,7 +52,9 @@ MODEL_DEFAULTS = {
     # Task Vector Size
     "context_input_size": 2,
     #HyperNetwork Hidden Sizes
-    "hyper_hiddens": [32, 64],
+    "hyper_hiddens": [64, 64],
+
+    "concat_hidden": [32, 32],
 
 
     # == LSTM ==

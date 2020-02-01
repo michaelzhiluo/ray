@@ -434,6 +434,14 @@ class RolloutWorker(EvaluatorInterface):
         #import pdb; pdb.set_trace()
         metaworld_envs = ['bin-picking-v1', 'box-close-v1', 'hand-insert-v1', 'door-lock-v1', 'door-unlock-v1', 'reach-v1', 'push-v1', 'pick-place-v1', 'reach-wall-v1', 'pick-place-wall-v1', 'push-wall-v1', 'door-open-v1', 'door-close-v1', 'drawer-open-v1', 'drawer-close-v1', 'button-press_topdown-v1', 'button-press-v1', 'button-press-topdown-wall-v1', 'button-press-wall-v1', 'peg-insert-side-v1', 'peg-unplug-side-v1', 'window-open-v1', 'window-close-v1', 'dissassemble-v1', 'hammer-v1', 'plate-slide-v1', 'plate-slide-side-v1', 'plate-slide-back-v1', 'plate-slide-back-side-v1', 'handle-press-v1', 'handle-pull-v1', 'handle-press-side-v1', 'handle-pull-side-v1', 'stick-push-v1', 'stick-pull-v1', 'basket-ball-v1', 'soccer-v1', 'faucet-open-v1', 'faucet-close-v1', 'coffee-push-v1', 'coffee-pull-v1', 'coffee-button-v1', 'sweep-v1', 'sweep-into-v1', 'pick-out-of-hole-v1', 'assembly-v1', 'shelf-place-v1', 'push-back-v1', 'lever-pull-v1', 'dial-turn-v1']
         if self.policy_config["env"] in metaworld_envs:
+            goal_low = self.async_env.vector_env.envs[0].active_env.goal_space.low
+            goal_high = self.async_env.vector_env.envs[0].active_env.goal_space.high
+            for i,goal in enumerate(task):
+                # Between [-1, 1]
+                #task[i] = (task[i]-((goal_high[i]+goal_low[i])/2.0))*(2.0/(goal_high[i] - goal_low[i]))
+                # Between [0, 1]
+                task[i] = (task[i]-((goal_high[i]+goal_low[i])/2.0))*(1.0/(goal_high[i] - goal_low[i])) + 0.5
+            print(task)
             return task
         elif self.policy_config["env"]=="SawyerSimple-v0":
             goal_low = [-0.2, 0.6, 0.02]

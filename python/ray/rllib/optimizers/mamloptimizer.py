@@ -45,6 +45,7 @@ class MAMLOptimizer(PolicyOptimizer):
 		self.maml_optimizer_steps = maml_optimizer_steps
 		self.config = config
 		self.context_input_size = self.config["model"]["concat_input_size"]
+		self.traverse_once= True
 
 	@override(PolicyOptimizer)
 	def step(self):
@@ -59,10 +60,13 @@ class MAMLOptimizer(PolicyOptimizer):
 		print("Setting Tasks for each Worker")
 		# Set Tasks for each Worker
 		with self.set_tasks_timer:
-			env_configs = self.workers.local_worker().sample_tasks(self.num_tasks)
-			for i,e in enumerate(self.workers.remote_workers()):
-				env_configs[i] = e.set_task.remote(env_configs[i])
-		#import pdb; pdb.set_trace()
+			if self.traverse_once:
+				self.goals = np.array(self.workers.local_worker().sample_tasks(50))#self.num_tasks)
+				self.traverse_once=False
+			goal_indexes = np.random.randint(0,high=49, size=self.num_tasks)
+			env_configs = list(self.goals[goal_indexes.astype(int)])
+			env_configs = ray_get_and_free([e.set_task.remote(env_configs[i]) for i,e in enumerate(self.workers.remote_workers())])
+
 		#env_configs = self.preprocess_context(env_configs)
 		# Collecting Data from Pre and Post Adaptations
 		print("Sampling Data")
