@@ -1,9 +1,9 @@
-reach-concat-false-new-hyper-design:
+reach-concat-scaled-static:
     env: reach-v1
     run: MAML
     stop:
-        training_iteration: 2001
-    local_dir: /data/mluo/metaworld-static-goals
+        training_iteration: 501
+    local_dir: /data/mluo/metaworld-concat-testing
     config:
         # Sample Batch Size must equal Horizon!
         # Must Also be Complete Episdoes
@@ -29,5 +29,6 @@ reach-concat-false-new-hyper-design:
             free_log_std: True
             concat_context: False
         inner_lr: 0.05
-        use_context: dynamic
+        use_context:
+            grid_search: [dynamic, dynamic]
 

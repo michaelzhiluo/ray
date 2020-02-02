@@ -440,7 +440,8 @@ class RolloutWorker(EvaluatorInterface):
                 # Between [-1, 1]
                 #task[i] = (task[i]-((goal_high[i]+goal_low[i])/2.0))*(2.0/(goal_high[i] - goal_low[i]))
                 # Between [0, 1]
-                task[i] = (task[i]-((goal_high[i]+goal_low[i])/2.0))*(1.0/(goal_high[i] - goal_low[i])) + 0.5
+                #task[i] = (task[i]-((goal_high[i]+goal_low[i])/2.0))*(1.0/(goal_high[i] - goal_low[i])) + 0.5
+                task[i] = task[i]
             print(task)
             return task
         elif self.policy_config["env"]=="SawyerSimple-v0":

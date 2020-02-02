@@ -313,8 +313,8 @@ class MAMLLoss(object):
                         else:
                             raise NameError
                         bias_added = False
-                film_params = tf.split(c,  [val for val in concat_hidden], axis=1)
-                #film_params = tf.split(c, [val for val in hidden_sizes for _ in (0, 1)],axis=1)
+                #film_params = tf.split(c,  [val for val in concat_hidden], axis=1)
+                film_params = tf.split(c, [val for val in hidden_sizes for _ in (0, 1)],axis=1)
 
             x = inp
             j=0
@@ -331,13 +331,15 @@ class MAMLLoss(object):
                     if "fc_out" not in name:
                         x = hidden_nonlinearity(x)
                         if context is not None and not policy_config["concat_context"]:
-                            temp = tf.tile(film_params[j][0], tf.shape(x)[0:1])
-                            temp = tf.reshape(temp, [-1, concat_hidden[j]])
-                            x = tf.concat([x, temp], axis=1)
+                            #temp = tf.tile(film_params[j][0], tf.shape(x)[0:1])
+                            #temp = tf.reshape(temp, [-1, concat_hidden[j]])
+                            #x = tf.concat([x, temp], axis=1)
                             j+=1
                             #x =  tf.einsum('ij,kj->ij', x, -2 + 4*tf.math.sigmoid(film_params.pop(0)))+ (-0.5 + tf.math.sigmoid(film_params.pop(0)))
                             #x =  tf.einsum('ij,kj->ij', x, 0.5 + tf.math.sigmoid(film_params.pop(0)))+ (-0.5 + tf.math.sigmoid(film_params.pop(0)))
-                            #x =  tf.einsum('ij,kj->ij', x, film_params.pop(0)+1)+ film_params.pop(0)
+                            x = tf.einsum('ij,kj->ij', x, 1 + 2*tf.math.tanh(film_params.pop(0)))+ tf.math.tanh(film_params.pop(0))
+
+                            #x =  tf.einsum('ij,kj->ij', x, film_params.pop(0))+ film_params.pop(0)
                     elif "fc_out" in name:
                         x = output_nonlinearity(x)
                     else:
