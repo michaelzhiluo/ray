@@ -88,7 +88,6 @@ MODEL_DEFAULTS = {
 # __sphinx_doc_end__
 # yapf: enable
 
-import rand_param_envs
 @PublicAPI
 class ModelCatalog(object):
     """Registry of models, preprocessors, and action distributions for envs.
