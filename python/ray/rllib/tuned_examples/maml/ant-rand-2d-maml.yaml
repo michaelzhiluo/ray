@@ -1,9 +1,8 @@
-walker2d-maml:
-    env: Walker2DRandDirec-v2
+ant-maml:
+    env: AntRand2D-v2
     run: MAML
     stop:
         training_iteration: 1001
-    local_dir: /data/mluo/Walkder2D-results
     config:
         # Sample Batch Size must equal Horizon!
         # Must Also be Complete Episdoes
@@ -12,6 +11,8 @@ walker2d-maml:
         num_envs_per_worker: 20
         batch_mode: complete_episodes
 
+        inner_adaptation_steps: 1
+        maml_optimizer_steps: 5
         gamma: 0.99
         lambda: 1.0
         lr: .0001
@@ -22,7 +23,11 @@ walker2d-maml:
         num_gpus: 1
         model:
             concat_input_size: 10
-            context_input_size: 1
+            context_input_size: 2
             free_log_std: True
+            # For Concat Experiments, set 'concat_context: True; 
+            # and 'use_context: dynamic'
             concat_context: False
-        use_context: none                             
+        inner_lr: 0.1
+        # Context: dynamic, static, none
+        use_context: none             

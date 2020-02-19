@@ -3,7 +3,6 @@ walker2d-maml:
     run: MAML
     stop:
         training_iteration: 1001
-    local_dir: /data/mluo/Walkder2D-results
     config:
         # Sample Batch Size must equal Horizon!
         # Must Also be Complete Episdoes
@@ -24,5 +23,8 @@ walker2d-maml:
             concat_input_size: 10
             context_input_size: 1
             free_log_std: True
+            # For Concat Experiments, set 'concat_context: True; 
+            # and 'use_context: dynamic'
             concat_context: False
-        use_context: none                             
+        # Context: dynamic, static, none
+        use_context: none                            

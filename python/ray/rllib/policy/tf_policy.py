@@ -432,7 +432,8 @@ class TFPolicy(Policy):
         builder.add_feed_dict({self._obs_input: obs_batch})
         if self.config["use_context"] == "dynamic":
             context_inp = np.atleast_1d(self.context)
-            builder.add_feed_dict({self._context_input: np.tile(context_inp,int(self.config["model"]["concat_input_size"]/context_inp.shape[0]))}) 
+            builder.add_feed_dict({self._context_input: 
+                np.tile(context_inp,int(self.config["model"]["concat_input_size"]/context_inp.shape[0]))}) 
         elif self.config["use_context"] == "static":
             builder.add_feed_dict({self._context_input: np.ones(self.config["model"]["concat_input_size"])})
         if state_batches:
@@ -568,7 +569,7 @@ class LearningRateSchedule(object):
         else:
             return tf.train.AdamOptimizer(self.cur_lr)
 
-
+# Used by the worker for MAML agent (standard SGD)
 class SimpleOptimizer(optimizer.Optimizer):
     def __init__(self, learning_rate=0.001,use_locking=False, name="SimpleOptimizer"):
         super(SimpleOptimizer, self).__init__(use_locking, name)

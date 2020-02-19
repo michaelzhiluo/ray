@@ -3,11 +3,10 @@ halfcheetah-maml:
     run: MAML
     stop:
         training_iteration: 1001
-    local_dir: /data/mluo/delete-this
     config:
+
         # Sample Batch Size must equal Horizon!
         # Must Also be Complete Episdoes
-        #Leave this Alone
         horizon: 100
         sample_batch_size: 100
         num_envs_per_worker: 20
@@ -30,5 +29,8 @@ halfcheetah-maml:
             concat_input_size: 10
             context_input_size: 1
             free_log_std: True
+            # For Concat Experiments, set 'concat_context: True; 
+            # and 'use_context: dynamic'
             concat_context: False
-        use_context: none                        
+        # Context: dynamic, static, none
+        use_context: none                     
