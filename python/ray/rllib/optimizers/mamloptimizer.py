@@ -30,6 +30,7 @@ class MAMLOptimizer(PolicyOptimizer):
 
 	def __init__(self, workers, config, inner_adaptation_steps=1, train_batch_size=1, maml_optimizer_steps=5):
 		PolicyOptimizer.__init__(self, workers)
+
 		# Each worker represents a different task
 		self.baseline = LinearFeatureBaseline()
 		self.discount = config["gamma"]
@@ -49,6 +50,7 @@ class MAMLOptimizer(PolicyOptimizer):
 
 	@override(PolicyOptimizer)
 	def step(self):
+
 		# Initialize Workers to have the same weights
 		print("Start of Optimizer Loop: Setting Weights")
 		with self.update_weights_timer:
@@ -57,8 +59,8 @@ class MAMLOptimizer(PolicyOptimizer):
 				for e in self.workers.remote_workers():
 					e.set_weights.remote(weights)
 
-		print("Setting Tasks for each Worker")
 		# Set Tasks for each Worker
+		print("Setting Tasks for each Worker")
 		with self.set_tasks_timer:
 			if self.traverse_once:
 				self.goals = np.array(self.workers.local_worker().sample_tasks(50))#self.num_tasks)
@@ -67,11 +69,11 @@ class MAMLOptimizer(PolicyOptimizer):
 			env_configs = list(self.goals[goal_indexes.astype(int)])
 			env_configs = ray_get_and_free([e.set_task.remote(env_configs[i]) for i,e in enumerate(self.workers.remote_workers())])
 
-		#env_configs = self.preprocess_context(env_configs)
 		# Collecting Data from Pre and Post Adaptations
 		print("Sampling Data")
 		with self.sample_timer:
 			meta_split = []
+
 			# Pre Adaptation Sampling from Workers
 			samples = ray_get_and_free([e.sample.remote("pre") for i,e in enumerate(self.workers.remote_workers())])
 			samples, split_list = self.post_processing(samples, self.config["num_envs_per_worker"])
@@ -96,6 +98,7 @@ class MAMLOptimizer(PolicyOptimizer):
 				samples, split_list = self.post_processing(samples, self.config["num_envs_per_worker"])
 				all_samples = all_samples.concat(SampleBatch.concat_samples(samples))
 				meta_split.append(split_list)
+
 		context_list = []
 		for i in env_configs:
 			if self.config["use_context"] == "dynamic":
@@ -111,13 +114,11 @@ class MAMLOptimizer(PolicyOptimizer):
 
 		# Meta gradient Update
 		# All Samples should be a list of list of dicts where the dims are (inner_adaptation_steps+1,num_workers,SamplesDict)
-		# Should the whole computation graph be in master?
 		print("Meta Update")
 		with self.meta_grad_timer:
 			all_samples["split"] = np.array(meta_split)
 			for i in range(self.maml_optimizer_steps):
 				fetches = self.workers.local_worker().learn_on_batch(all_samples)
-				print(fetches)
 			self.learner_stats = get_learner_stats(fetches)
 
 		self.num_steps_sampled += all_samples.count

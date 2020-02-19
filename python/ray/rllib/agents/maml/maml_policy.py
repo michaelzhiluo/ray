@@ -30,6 +30,7 @@ tf = try_import_tf()
 BEHAVIOUR_LOGITS = "behaviour_logits"
 
 
+# This is the standard PPO computation graph for workers/tasks that collect data
 class PPOLoss(object):
     def __init__(self,
                  obs,
@@ -84,7 +85,6 @@ class PPOLoss(object):
 
         def reduce_mean_valid(t):
             return tf.reduce_mean(tf.boolean_mask(t, valid_mask))
-        print("PPO LOSS")
 
         dist_cls, _ = ModelCatalog.get_action_dist(action_space, {})
         prev_dist = dist_cls(logits)
@@ -104,6 +104,7 @@ class PPOLoss(object):
         loss = tf.Print(loss, ["Worker Loss", loss, self.mean_kl])
         self.loss = loss + tf.stop_gradient(0.00000000000*self.kl_loss)
 
+# This is the Meta-Update computation graph for master worker
 class MAMLLoss(object):
 
     def __init__(self,
@@ -128,7 +129,6 @@ class MAMLLoss(object):
             vf_loss_coeff=1.0,
             context=None):
 
-        print("MAML Loss")
         self.config = config
         self.num_tasks = num_tasks
         self.inner_adaptation_steps = inner_adaptation_steps
@@ -145,6 +145,7 @@ class MAMLLoss(object):
         self.vf_preds = self.split_placeholders(vf_preds, split)
         self.valid_mask = self.split_placeholders(valid_mask, split)
         pi_new_init = self.split_placeholders(model.outputs, split)
+
         contexts = [None]*num_tasks
         if context is not None:
             contexts = tf.split(context, self.num_tasks)
@@ -153,7 +154,6 @@ class MAMLLoss(object):
         self.policy_vars = {}
         for var in policy_vars:
             self.policy_vars[var.name] = var
-        print(self.policy_vars)
 
         # Calculate pi_new for PPO
         pi_new_logits, current_policy_vars, value_fns = [], [], []
@@ -167,6 +167,7 @@ class MAMLLoss(object):
 
         inner_kls = []
         inner_ppo_loss = []
+
         # Recompute weights for inner-adaptation (since this is also incoporated in meta objective loss function)
         for step in range(self.inner_adaptation_steps):
             kls = []
@@ -194,11 +195,13 @@ class MAMLLoss(object):
                 current_policy_vars[i] = adapted_policy_vars
                 kls.append(kl_loss)
                 inner_ppo_loss.append(ppo_loss)
+
             self.kls = kls
             inner_kls.append(kls)
 
         mean_inner_kl = tf.stack([tf.reduce_mean(tf.stack(inner_kl)) for inner_kl in inner_kls])
         self.mean_inner_kl = mean_inner_kl
+
         ppo_obj = []
         for i in range(self.num_tasks):
             ppo_loss, _, kl_loss, _, _ = self.PPOLoss(
@@ -279,12 +282,11 @@ class MAMLLoss(object):
         return vf_loss
 
     def feed_forward(self, obs, policy_vars, policy_config, context = None):
-        # Hacky for now, assumes it is Fully connected network in models/fcnet.py, Conv net implemented on a later date
+        # Hacky for now, assumes it is Fully connected network in models/fcnet.py, Conv-net not implemented
         # Returns pi_new_logits and value_function_prediction
         def fc_network(inp, network_vars, hidden_nonlinearity, output_nonlinearity, policy_config, hyper_vars = None, context=None):
             context_input_size = policy_config["context_input_size"]
             hidden_sizes = policy_config["fcnet_hiddens"]
-            concat_hidden = policy_config["concat_hidden"]
             bias_added = False
             if context is not None:
                 c = context
@@ -313,7 +315,6 @@ class MAMLLoss(object):
                         else:
                             raise NameError
                         bias_added = False
-                #film_params = tf.split(c,  [val for val in concat_hidden], axis=1)
                 film_params = tf.split(c, [val for val in hidden_sizes for _ in (0, 1)],axis=1)
 
             x = inp
@@ -331,15 +332,8 @@ class MAMLLoss(object):
                     if "fc_out" not in name:
                         x = hidden_nonlinearity(x)
                         if context is not None and not policy_config["concat_context"]:
-                            #temp = tf.tile(film_params[j][0], tf.shape(x)[0:1])
-                            #temp = tf.reshape(temp, [-1, concat_hidden[j]])
-                            #x = tf.concat([x, temp], axis=1)
                             j+=1
-                            #x =  tf.einsum('ij,kj->ij', x, -2 + 4*tf.math.sigmoid(film_params.pop(0)))+ (-0.5 + tf.math.sigmoid(film_params.pop(0)))
-                            #x =  tf.einsum('ij,kj->ij', x, 0.5 + tf.math.sigmoid(film_params.pop(0)))+ (-0.5 + tf.math.sigmoid(film_params.pop(0)))
                             x = tf.einsum('ij,kj->ij', x, 1 + 2*tf.math.tanh(film_params.pop(0)))+ tf.math.tanh(film_params.pop(0))
-
-                            #x =  tf.einsum('ij,kj->ij', x, film_params.pop(0))+ film_params.pop(0)
                     elif "fc_out" in name:
                         x = output_nonlinearity(x)
                     else:
@@ -383,7 +377,7 @@ class MAMLLoss(object):
             if grad[i] is None:
                 adapted_vars[name] = var
             else:
-                adapted_vars[name] = var - self.config["inner_lr"]*grad[i] #tf.multiply(self.step_sizes[name], grad[i])
+                adapted_vars[name] = var - self.config["inner_lr"]*grad[i] 
         return adapted_vars
 
     def split_placeholders(self, placeholder, split):
@@ -391,14 +385,9 @@ class MAMLLoss(object):
         placeholder_list = []
         for index, split_placeholder in enumerate(inner_placeholder_list):
             placeholder_list.append(tf.split(split_placeholder, split[index], axis=0))
-        '''
-        inner_placeholder_list = tf.split(placeholder, self.inner_adaptation_steps+1, axis=0)
-        placeholder_list = []
-        for split_placeholder in inner_placeholder_list:
-            placeholder_list.append(tf.split(split_placeholder, self.num_tasks, axis=0))
-        '''
         return placeholder_list
 
+    # Currently not used (perhaps in the future)
     def _create_step_size_vars(self):
         # Step sizes
         step_sizes = dict()
@@ -493,10 +482,13 @@ class MAMLTFPolicy(LearningRateSchedule, MAMLPostprocessing, TFPolicy):
             prev_rewards_ph = tf.placeholder(
                 tf.float32, [None], name="prev_reward")
             split_ph = tf.placeholder(tf.int32, name="Meta-Update-Splitting", shape=(self.config["inner_adaptation_steps"]+1, self.config["num_workers"]))
+
+            # Context Placeholder for Static, Dynamic, and Concat
             if not self.config["use_context"] == "none":
                 context_ph = tf.placeholder(tf.float32, [None], name="context")
             else:
                 context_ph = None
+
             existing_state_in = None
             existing_seq_lens = None
         self.observations = obs_ph
@@ -697,12 +689,6 @@ class MAMLTFPolicy(LearningRateSchedule, MAMLPostprocessing, TFPolicy):
                 self.kl_coeff_val[i] *= 0.5
             elif kl > 1.5 * self.kl_target:
                 self.kl_coeff_val[i] *= 2.0
-            '''     
-            if kl > 2.0 * self.kl_target:
-                self.kl_coeff_val[i] *= 1.5
-            elif kl < 0.5 * self.kl_target:
-                self.kl_coeff_val[i] *= 0.5
-            '''
         self.kl_coeff.load(self.kl_coeff_val, session=self.sess)
         return self.kl_coeff_val
 

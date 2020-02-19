@@ -76,7 +76,7 @@ def collect_episodes(local_worker=None, remote_workers=[],
         episodes.extend(metrics)
     return episodes, num_metric_batches_dropped
 
-
+# Mutated method for MAML-agent
 @DeveloperAPI
 def collect_episodes(adaptation_type, local_worker=None, remote_workers=[],
                      timeout_seconds=180):

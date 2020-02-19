@@ -64,6 +64,7 @@ class SamplerInput(InputReader):
         else:
             return batches[0]
 
+    # Mutated method for MAML-agent
     def next(self, adaptation_type):
         batches = [self.get_data(adaptation_type)]
         batches.extend(self.get_extra_batches())
@@ -115,6 +116,7 @@ class SyncSampler(SamplerInput):
             else:
                 return item
 
+    # Mutated method for MAML-agent
     def get_data(self, adaptation_type):
         while True:
             item = next(self.rollout_provider)
@@ -133,7 +135,7 @@ class SyncSampler(SamplerInput):
                 break
         return completed
 
-
+    # Mutated method for MAML-agent
     def get_metrics(self, adaptation_type):
         completed = []
         while True:

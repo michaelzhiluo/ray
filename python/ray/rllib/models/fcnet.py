@@ -23,7 +23,7 @@ class FullyConnectedNetwork(Model):
         activation = get_activation_fn(options.get("fcnet_activation"))
         concat_input_size = options.get("concat_input_size")
         context_input_size = options.get("context_input_size")
-        concat_hidden = options.get("concat_hidden")
+
         if context is not None:
             context = tf.reshape(context, (-1,concat_input_size))
             if options.get("concat_context"):
@@ -41,14 +41,13 @@ class FullyConnectedNetwork(Model):
                         activation=activation,
                         kernel_initializer=tf.keras.initializers.glorot_normal(),
                         bias_initializer=tf.zeros_initializer())
-                # Change back to normal
-                x_hyp = tf.layers.dense(x_hyp, 2*sum(hiddens), name='hyper_out', #tf.layers.dense(x_hyp, sum(concat_hidden), name='hyper_out',
+                x_hyp = tf.layers.dense(x_hyp, 2*sum(hiddens), name='hyper_out', 
                     activation=None,
                     kernel_initializer=tf.keras.initializers.glorot_normal(),
                     bias_initializer=tf.zeros_initializer())
-                # Change back to normal
-                #film_params = tf.split(x_hyp,  [val for val in concat_hidden], axis=1)
+
                 film_params = tf.split(x_hyp, [val for val in hiddens for _ in (0, 1)], axis=1)
+                
         with tf.name_scope("fc_net"):
             i = 1
             last_layer = inputs
@@ -62,16 +61,7 @@ class FullyConnectedNetwork(Model):
                     activation=activation,
                     name=label)
                 if context is not None and not options.get("concat_context"):
-                    #last_layer = tf.einsum('ij,kj->ij', last_layer, film_params.pop(0))+ film_params.pop(0)
-                    #last_layer = tf.einsum('ij,kj->ij', last_layer, film_params.pop(0)+1)+ film_params.pop(0)
                     last_layer = tf.einsum('ij,kj->ij', last_layer, 1 + 2*tf.math.tanh(film_params.pop(0)))+ tf.math.tanh(film_params.pop(0))
-                    #last_layer = tf.einsum('ij,kj->ij', last_layer, 4*tf.math.sigmoid(film_params.pop(0))-2)+ (-0.5 + tf.math.sigmoid(film_params.pop(0)))
-                    '''
-                    temp = tf.tile(film_params[j][0], tf.shape(last_layer)[0:1])
-                    temp = tf.reshape(temp, [-1, concat_hidden[j]])
-                    last_layer = tf.concat([last_layer, temp], axis=1)
-                    '''
-                    print(last_layer)
                 i += 1
             label = "fc_out"
             output = tf.layers.dense(

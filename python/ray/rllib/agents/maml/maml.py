@@ -54,15 +54,15 @@ DEFAULT_CONFIG = with_common_config({
     # (Deprecated) Use the sampling behavior as of 0.6, which launches extra
     # sampling tasks for performance but can waste a large portion of samples.
     "straggler_mitigation": False,
-
+    # Number of Inner adaptation steps for Workers
     "inner_adaptation_steps": 1,
-
+    # Number of ProMP steps per meta-update iteration (PPO steps)
     "maml_optimizer_steps": 5,
-    # dynamic, static, or none
+    # Environmental Context Usage: [dynamic, static, none]
     "use_context": "dynamic",
-
+    # Inner Adaptation Step size
     "inner_lr": 0.1,
-
+    # Use PPO KL Loss
     "use_kl_loss": False,
 })
 # __sphinx_doc_end__
@@ -86,6 +86,7 @@ class MAMLTrainer(Trainer):
             train_batch_size=config["train_batch_size"],
             maml_optimizer_steps=config["maml_optimizer_steps"])
 
+    # Fill Tensorboard with Pre/Post update Stats
     def update_pre_post_stats(self, pre_res, post_res):
         pre_reward_max = pre_res['episode_reward_max']
         pre_reward_mean = pre_res['episode_reward_mean']
@@ -111,6 +112,7 @@ class MAMLTrainer(Trainer):
                 "require observation normalization.")
         prev_steps = self.optimizer.num_steps_sampled
         fetches = self.optimizer.step()
+        
         if "kl" in fetches and self.config["use_kl_loss"]:
             # single-agent
             self.workers.local_worker().for_policy(

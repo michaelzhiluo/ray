@@ -22,6 +22,7 @@ from ray.rllib.models.visionnet import VisionNetwork
 from ray.rllib.models.lstm import LSTM
 from ray.rllib.utils.annotations import DeveloperAPI, PublicAPI
 from ray.rllib.utils import try_import_tf
+import rand_param_envs
 
 tf = try_import_tf()
 
@@ -53,9 +54,6 @@ MODEL_DEFAULTS = {
     "context_input_size": 2,
     #HyperNetwork Hidden Sizes
     "hyper_hiddens": [64, 64],
-
-    "concat_hidden": [32, 32],
-
 
     # == LSTM ==
     # Whether to wrap the model with a LSTM
