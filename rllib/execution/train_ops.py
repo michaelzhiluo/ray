@@ -67,6 +67,7 @@ class TrainOneStep:
                 metrics.info[LEARNER_INFO] = info
             else:
                 info = self.workers.local_worker().learn_on_batch(batch)
+                print(batch)
                 metrics.info[LEARNER_INFO] = get_learner_stats(info)
             learn_timer.push_units_processed(batch.count)
         metrics.counters[STEPS_TRAINED_COUNTER] += batch.count
